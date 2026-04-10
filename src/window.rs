@@ -4,7 +4,7 @@ use adw::prelude::*;
 use fraction::Ratio;
 use gettextrs::gettext;
 use glib::clone;
-use gtk::{gio, glib, subclass::prelude::*};
+use gtk::{gdk, gio, glib, subclass::prelude::*};
 use itertools::Itertools;
 
 use crate::{
@@ -91,6 +91,8 @@ mod imp {
         pub timeline: TemplateChild<Timeline>,
         #[template_child]
         pub play_pause: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub open_video_button: TemplateChild<gtk::Button>,
 
         pub running_flag: Arc<AtomicBool>,
         pub video_dimensions: Cell<Option<Dimensions<u32>>>,
@@ -98,6 +100,7 @@ mod imp {
         pub selected_video_path: RefCell<Option<PathBuf>>,
         pub result_video_path: RefCell<Option<PathBuf>>,
         pub provider: gtk::CssProvider,
+        pub mobile_settings_button: RefCell<Option<gtk::Button>>,
         #[derivative(Default(value = "gio::Settings::new(APP_ID)"))]
         pub settings: gio::Settings,
     }
@@ -169,13 +172,45 @@ glib::wrapper! {
 
 #[gtk::template_callbacks]
 impl AppWindow {
+    fn playback_row(&self) -> gtk::Box {
+        self.imp()
+            .play_pause
+            .parent()
+            .and_downcast::<gtk::Box>()
+            .expect("play_pause should be inside a Box")
+    }
+
+    fn editor_content(&self) -> gtk::Box {
+        self.imp()
+            .video_preview
+            .parent()
+            .and_downcast::<gtk::Box>()
+            .expect("video_preview should be inside a Box")
+    }
+
+    fn path_from_drop_value(value: &glib::Value) -> Option<PathBuf> {
+        value
+            .get::<gdk::FileList>()
+            .ok()
+            .and_then(|files| files.files().into_iter().find_map(|file| file.path()))
+            .or_else(|| value.get::<gio::File>().ok().and_then(|file| file.path()))
+            .or_else(|| {
+                value.get::<String>().ok().and_then(|text| {
+                    text.lines()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty() && !line.starts_with('#'))
+                        .and_then(|line| url::Url::parse(line).ok())
+                        .and_then(|uri| uri.to_file_path().ok())
+                })
+            })
+    }
+
     pub fn new<P: glib::prelude::IsA<gtk::Application>>(app: &P) -> Self {
         let win = glib::Object::builder::<AppWindow>()
             .property("application", app)
             .build();
 
         win.setup_callbacks();
-
         let container_formats = gtk::StringList::new(&[]);
 
         for cf in ContainerFormat::get_all() {
@@ -229,6 +264,80 @@ impl AppWindow {
 
     fn setup_callbacks(&self) {
         let imp = self.imp();
+        let drop_target =
+            gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+        drop_target.set_types(&[
+            gdk::FileList::static_type(),
+            gio::File::static_type(),
+            String::static_type(),
+        ]);
+        drop_target.set_preload(true);
+        drop_target.connect_enter(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[upgrade_or]
+            gdk::DragAction::empty(),
+            move |_, _, _| {
+                eprintln!("dnd: enter on welcome={:?}", this.imp().stack.visible_child_name());
+                if this.imp().stack.visible_child_name().as_deref() == Some("welcome") {
+                    this.imp().open_video_button.add_css_class("drop-zone-active");
+                    gdk::DragAction::COPY
+                } else {
+                    gdk::DragAction::empty()
+                }
+            }
+        ));
+        drop_target.connect_motion(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[upgrade_or]
+            gdk::DragAction::empty(),
+            move |_, _, _| {
+                eprintln!("dnd: motion on welcome={:?}", this.imp().stack.visible_child_name());
+                if this.imp().stack.visible_child_name().as_deref() == Some("welcome") {
+                    this.imp().open_video_button.add_css_class("drop-zone-active");
+                    gdk::DragAction::COPY
+                } else {
+                    gdk::DragAction::empty()
+                }
+            }
+        ));
+        drop_target.connect_leave(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                eprintln!("dnd: leave");
+                this.imp().open_video_button.remove_css_class("drop-zone-active");
+            }
+        ));
+        drop_target.connect_drop(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[upgrade_or]
+            false,
+            move |_, value, _, _| {
+                this.imp().open_video_button.remove_css_class("drop-zone-active");
+                eprintln!("dnd: drop type={}", value.type_().name());
+
+                if this.imp().stack.visible_child_name().as_deref() != Some("welcome") {
+                    return false;
+                }
+
+                let path = Self::path_from_drop_value(value);
+                let Some(path) = path else {
+                    eprintln!("dnd: unsupported payload");
+                    return false;
+                };
+                eprintln!("dnd: opening {}", path.display());
+
+                spawn!(async move {
+                    this.open_file(path).await;
+                });
+
+                true
+            }
+        ));
+        self.add_controller(drop_target);
 
         imp.rotate_left_button.connect_clicked(clone!(
             #[weak(rename_to=this)]

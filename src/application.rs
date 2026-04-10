@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use glib::{clone, ExitCode};
 use log::{debug, info};
 
@@ -55,6 +57,18 @@ mod imp {
 
             // Set icons for shell
             gtk::Window::set_default_icon_name(APP_ID);
+
+            if let Some(display) = gtk::gdk::Display::default() {
+                let icon_theme = gtk::IconTheme::for_display(&display);
+                let icons_path = Path::new(PKGDATADIR)
+                    .parent()
+                    .map(|share| share.join("icons"));
+
+                if let Some(icons_path) = icons_path.and_then(|path| path.to_str().map(str::to_owned))
+                {
+                    icon_theme.add_search_path(&icons_path);
+                }
+            }
         }
 
         fn open(&self, files: &[gio::File], _hint: &str) {

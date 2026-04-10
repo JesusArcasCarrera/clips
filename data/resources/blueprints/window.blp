@@ -2,9 +2,9 @@ using Gtk 4.0;
 using Adw 1;
 
 template $AppWindow : Adw.ApplicationWindow {
-  default-width: 800;
+  default-width: 1100;
   default-height: 700;
-  width-request: 300;
+  width-request: 600;
   height-request: 300;
   title: _("Footage");
 
@@ -17,7 +17,6 @@ template $AppWindow : Adw.ApplicationWindow {
         visible: false;
         styles ['flat']
       }
-
 
       [end]
       MenuButton {
@@ -47,6 +46,42 @@ template $AppWindow : Adw.ApplicationWindow {
           Box {
             orientation: vertical;
             spacing: 12;
+
+            Box welcome_drop_zone {
+              orientation: vertical;
+              spacing: 10;
+              halign: center;
+              width-request: 380;
+              margin-top: 12;
+              margin-bottom: 12;
+              tooltip-text: _("Drop a video file here");
+
+              Image {
+                halign: center;
+                icon-name: "camera-video-symbolic";
+                pixel-size: 40;
+              }
+
+              Label {
+                halign: center;
+                label: _("Drag and drop a video here");
+                justify: center;
+                wrap: true;
+              }
+
+              Label {
+                halign: center;
+                label: _("Open it directly without using the button");
+                justify: center;
+                wrap: true;
+                styles ["dim-label"]
+              }
+
+              styles [
+                "card",
+                "welcome-drop-zone",
+              ]
+            }
 
             Button open_video_button {
               valign: center;
@@ -85,13 +120,34 @@ template $AppWindow : Adw.ApplicationWindow {
 
       StackPage {
         name: "editing";
-        child: 
-        Adw.PreferencesPage {
-          Adw.PreferencesGroup {
-            $VideoPreview video_preview {}
-          }
-          Adw.PreferencesGroup {
-            Box {
+        child:
+        Adw.OverlaySplitView editor_split_view {
+          sidebar-position: end;
+          pin-sidebar: true;
+          enable-show-gesture: true;
+          enable-hide-gesture: true;
+          min-sidebar-width: 280;
+          max-sidebar-width: 360;
+          sidebar-width-fraction: 0.28;
+          hexpand: true;
+          vexpand: true;
+
+          content: Box editor_content {
+            orientation: vertical;
+            spacing: 12;
+            hexpand: true;
+            vexpand: true;
+            margin-start: 12;
+            margin-end: 12;
+            margin-top: 12;
+            margin-bottom: 12;
+
+            $VideoPreview video_preview {
+              hexpand: true;
+              vexpand: true;
+            }
+
+            Box playback_row {
               spacing: 12;
               Button play_pause {
                 icon-name: 'play-symbolic';
@@ -99,8 +155,7 @@ template $AppWindow : Adw.ApplicationWindow {
               }
               $Timeline timeline {}
             }
-          }
-          Adw.PreferencesGroup {
+
             Box {
               halign: center;
               spacing: 12;
@@ -130,114 +185,138 @@ template $AppWindow : Adw.ApplicationWindow {
                 tooltip-text: _("Disable Audio");
               }
             }
-          }
+          };
 
-          Adw.PreferencesGroup {
-            Adw.ActionRow resize_amount_row {
-              title: _("Resize");
+          sidebar: ScrolledWindow settings_sidebar {
+            hscrollbar-policy: never;
+            vscrollbar-policy: automatic;
+            width-request: 320;
+
+            Adw.Clamp {
+              maximum-size: 400;
+              margin-start: 12;
+              margin-end: 12;
+              margin-top: 12;
+              margin-bottom: 12;
+
               Box {
-                spacing: 5;
-                Entry resize_width_value {
-                  valign: center;
-                  placeholder-text: _("Width");
-                  tooltip-text: _("Width");
-                  input-purpose: digits;
-                  max-width-chars: 6;
-                  visible: false;
-                  hexpand: false;
-                }
-                Entry resize_scale_width_value {
-                  valign: center;
-                  placeholder-text: _("Width");
-                  input-purpose: digits;
-                  tooltip-text: _("Width");
-                  max-width-chars: 6;
-                  hexpand: false;
-                }
-                Image link_axis {
-                  valign: center;
-                  icon-name: 'chain-link-symbolic';
-                  tooltip-text: _("Preserve aspect ratio");
-                  styles ['lock']
-                }
-                Entry resize_height_value {
-                  valign: center;
-                  placeholder-text: _("Height");
-                  tooltip-text: _("Height");
-                  input-purpose: digits;
-                  max-width-chars: 6;
-                  visible: false;
-                  hexpand: false;
-                }
-                Entry resize_scale_height_value {
-                  valign: center;
-                  placeholder-text: _("Height");
-                  tooltip-text: _("Height");
-                  input-purpose: digits;
-                  max-width-chars: 6;
-                  hexpand: false;
-                }
-              }
-              Adw.Bin {
-                Box {
-                  DropDown resize_type {
-                    valign: center;
-                    accessibility {
-                      label: _("Choose between resizing with percentages or using exact pixels");
+                orientation: vertical;
+                spacing: 24;
+
+                ListBox {
+                  selection-mode: none;
+                  styles ["boxed-list"]
+
+                  Adw.ActionRow resize_amount_row {
+                    title: _("Resize");
+                    Box {
+                      spacing: 5;
+                      Entry resize_width_value {
+                        valign: center;
+                        placeholder-text: _("Width");
+                        tooltip-text: _("Width");
+                        input-purpose: digits;
+                        max-width-chars: 6;
+                        visible: false;
+                        hexpand: false;
+                      }
+                      Entry resize_scale_width_value {
+                        valign: center;
+                        placeholder-text: _("Width");
+                        input-purpose: digits;
+                        tooltip-text: _("Width");
+                        max-width-chars: 6;
+                        hexpand: false;
+                      }
+                      Image link_axis {
+                        valign: center;
+                        icon-name: 'chain-link-symbolic';
+                        tooltip-text: _("Preserve aspect ratio");
+                        styles ['lock']
+                      }
+                      Entry resize_height_value {
+                        valign: center;
+                        placeholder-text: _("Height");
+                        tooltip-text: _("Height");
+                        input-purpose: digits;
+                        max-width-chars: 6;
+                        visible: false;
+                        hexpand: false;
+                      }
+                      Entry resize_scale_height_value {
+                        valign: center;
+                        placeholder-text: _("Height");
+                        tooltip-text: _("Height");
+                        input-purpose: digits;
+                        max-width-chars: 6;
+                        hexpand: false;
+                      }
                     }
-                    model:
-                    StringList resize_types {
-                      strings [_("%"),_("px")]
+                    Adw.Bin {
+                      Box {
+                        DropDown resize_type {
+                          valign: center;
+                          accessibility {
+                            label: _("Choose between resizing with percentages or using exact pixels");
+                          }
+                          model:
+                          StringList resize_types {
+                            strings [_("%"),_("px")]
+                          }
+                          ;
+                          styles ["flat", "unit-drop"]
+                        }
+                      }
                     }
+                  }
+                  Adw.SpinRow framerate_row {
+                    title: _("Framerate");
+                    adjustment: Adjustment {
+                      lower: 1;
+                      step-increment: 1;
+                      upper: 480;
+                    }
+
                     ;
-                    styles ["flat", "unit-drop"]
+                    value: 30;
+                  }
+                }
+
+                ListBox {
+                  selection-mode: none;
+                  styles ["boxed-list"]
+
+                  Adw.ComboRow container_row {
+                    title: _("Container Format");
+                    use-subtitle: true;
+                    model: StringList {};
+                    styles ["property"]
+                  }
+                  Adw.ComboRow video_encoding {
+                    title: _("Video Encoding");
+                    use-subtitle: true;
+                    model: StringList {};
+                    styles ["property"]
+                  }
+                  Adw.ComboRow audio_encoding {
+                    title: _("Audio Encoding");
+                    use-subtitle: true;
+                    model: StringList {};
+                    styles ["property"]
+                  }
+                }
+
+                Box {
+                  halign: center;
+                  margin-top: 12;
+                  Button save_button {
+                    label: _("Save Video");
+                    styles ["suggested-action", "pill"]
                   }
                 }
               }
             }
-            Adw.SpinRow framerate_row {
-              title: _("Framerate");
-              adjustment: Adjustment {
-                lower: 1;
-                step-increment: 1;
-                upper: 480;
-              }
-
-              ;
-              value: 30;
-            }
-          }
-
-          Adw.PreferencesGroup {
-            Adw.ComboRow container_row {
-              title: _("Container Format");
-              use-subtitle: true;
-              model: StringList {};
-              styles ["property"]
-            }
-            Adw.ComboRow video_encoding {
-              title: _("Video Encoding");
-              use-subtitle: true;
-              model: StringList {};
-              styles ["property"]
-            }
-            Adw.ComboRow audio_encoding {
-              title: _("Audio Encoding");
-              use-subtitle: true;
-              model: StringList {};
-              styles ["property"]
-            }
-          }
-
-          Adw.PreferencesGroup {
-            Box {
-              halign: center;
-              Button save_button {
-                label: _("Save Video");
-                styles ["suggested-action", "pill"]
-              }
-            }
-          }
+          };
         }
 
         ;

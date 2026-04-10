@@ -45,6 +45,11 @@ fn runtime() -> &'static Runtime {
 }
 
 fn main() -> ExitCode {
+    // Avoid GTK Vulkan renderer crashes observed with gtk4paintablesink on some NVIDIA setups.
+    if std::env::var_os("GSK_RENDERER").is_none() {
+        std::env::set_var("GSK_RENDERER", "gl");
+    }
+
     // Initialize logger
     pretty_env_logger::init();
 
