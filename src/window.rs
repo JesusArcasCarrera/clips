@@ -93,6 +93,12 @@ mod imp {
         pub play_pause: TemplateChild<gtk::Button>,
         #[template_child]
         pub open_video_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub editor_split_view: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub toggle_sidebar_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub settings_sidebar_revealer: TemplateChild<gtk::Revealer>,
 
         pub running_flag: Arc<AtomicBool>,
         pub video_dimensions: Cell<Option<Dimensions<u32>>>,
@@ -100,7 +106,6 @@ mod imp {
         pub selected_video_path: RefCell<Option<PathBuf>>,
         pub result_video_path: RefCell<Option<PathBuf>>,
         pub provider: gtk::CssProvider,
-        pub mobile_settings_button: RefCell<Option<gtk::Button>>,
         #[derivative(Default(value = "gio::Settings::new(APP_ID)"))]
         pub settings: gio::Settings,
     }
@@ -388,6 +393,23 @@ impl AppWindow {
                 }
             }
         ));
+        imp.toggle_sidebar_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                let revealer = &this.imp().settings_sidebar_revealer;
+                let new_state = !revealer.reveals_child();
+                revealer.set_reveal_child(new_state);
+                let button = &this.imp().toggle_sidebar_button;
+                if new_state {
+                    button.set_icon_name("sidebar-hide-symbolic");
+                    button.set_tooltip_text(Some(&gettext("Hide Sidebar")));
+                } else {
+                    button.set_icon_name("sidebar-show-symbolic");
+                    button.set_tooltip_text(Some(&gettext("Show Sidebar")));
+                }
+            }
+        ));
         imp.save_button.connect_clicked(clone!(
             #[weak(rename_to=this)]
             self,
@@ -410,6 +432,7 @@ impl AppWindow {
             move |_| {
                 this.imp().stack.set_visible_child_name("welcome");
                 this.imp().back_edit.set_visible(false);
+                this.imp().toggle_sidebar_button.set_visible(false);
             }
         ));
         imp.cancel_button.connect_clicked(clone!(
@@ -1062,6 +1085,7 @@ impl AppWindow {
             .stack
             .set_transition_type(gtk::StackTransitionType::Crossfade);
         self.imp().stack.set_visible_child_name("editing");
+        self.imp().toggle_sidebar_button.set_visible(true);
         self.imp().play_pause.grab_focus();
     }
 
