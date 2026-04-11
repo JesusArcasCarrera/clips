@@ -108,6 +108,19 @@ impl VideoEncoding {
         }
     }
 
+    /// Returns (property_name, unit_multiplier) for bitrate.
+    /// The value to pass = bitrate_kbps * multiplier.
+    /// x264/x265 use kbit/s (multiplier 1), svtav1enc uses bits/s (multiplier 1000),
+    /// vp8/vp9 use bits/s via "target-bitrate" (multiplier 1000).
+    pub fn bitrate_property(&self) -> (&'static str, u32) {
+        match self {
+            H264 | H265 => ("bitrate", 1),
+            Av1 => ("bitrate", 1000),
+            Vp8 | Vp9 => ("target-bitrate", 1000),
+            Gif => ("", 0),
+        }
+    }
+
     pub fn for_display(&self) -> &str {
         match self {
             Av1 => "AV1",
@@ -142,9 +155,40 @@ impl AudioEncoding {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Quality {
+    Low,
+    Medium,
+    High,
+    Unchanged,
+}
+
+impl Quality {
+    /// Returns the bitrate in kbps for this quality level.
+    /// None means "unchanged" (use encoder defaults).
+    pub fn bitrate_kbps(&self) -> Option<u32> {
+        match self {
+            Quality::Low => Some(2000),
+            Quality::Medium => Some(5000),
+            Quality::High => Some(15000),
+            Quality::Unchanged => None,
+        }
+    }
+
+    pub fn from_index(index: u32) -> Self {
+        match index {
+            0 => Quality::Low,
+            1 => Quality::Medium,
+            2 => Quality::High,
+            _ => Quality::Unchanged,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct OutputFormat {
     pub container_format: ContainerFormat,
     pub video_encoding: Option<VideoEncoding>,
     pub audio_encoding: Option<AudioEncoding>,
+    pub quality: Quality,
 }

@@ -6,7 +6,7 @@ use std::{
 
 use glib::clone;
 use gst::{ClockTime, PadProbeData, PadProbeType, SeekFlags};
-use gstreamer_pbutils::Discoverer;
+use gstreamer_pbutils::{Discoverer, ElementProperties, ElementPropertiesMapItem};
 use gtk::{gdk, gio, glib, subclass::prelude::*};
 
 use ges::prelude::*;
@@ -15,7 +15,7 @@ use ges::Effect;
 use crate::{
     info::{get_info, Dimensions, Framerate},
     orientation::VideoOrientation,
-    profiles::{ContainerFormat, OutputFormat},
+    profiles::{ContainerFormat, OutputFormat, VideoEncoding},
 };
 
 mod imp {
@@ -704,11 +704,29 @@ impl VideoPreview {
                     )
                     .unwrap();
             } else {
-                let video_profile = gstreamer_pbutils::EncodingVideoProfile::builder(
-                    &gst::Caps::builder(output_format.video_encoding.unwrap().get_format()).build(),
-                )
-                .preset_name(output_format.video_encoding.unwrap().get_preset_name())
-                .build();
+                let video_encoding = output_format.video_encoding.unwrap();
+                let video_caps =
+                    gst::Caps::builder(video_encoding.get_format()).build();
+
+                let video_profile_builder =
+                    gstreamer_pbutils::EncodingVideoProfile::builder(&video_caps)
+                        .preset_name(video_encoding.get_preset_name());
+
+                let video_profile = if let Some(bitrate_kbps) = output_format.quality.bitrate_kbps() {
+                    let (prop_name, multiplier) = video_encoding.bitrate_property();
+                    let encoder_name = video_encoding.get_preset_name();
+                    let bitrate_value = bitrate_kbps as i32 * multiplier as i32;
+                    let props = ElementProperties::builder_map()
+                        .item(
+                            ElementPropertiesMapItem::builder(encoder_name)
+                                .field(prop_name, bitrate_value)
+                                .build(),
+                        )
+                        .build();
+                    video_profile_builder.element_properties(props).build()
+                } else {
+                    video_profile_builder.build()
+                };
 
                 let container_format =
                     gst::Caps::builder(output_format.container_format.format()).build();

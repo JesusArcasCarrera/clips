@@ -9,7 +9,7 @@ use itertools::Itertools;
 
 use crate::{
     info::{Dimensions, Framerate},
-    profiles::{AudioEncoding, ContainerFormat, OutputFormat, VideoEncoding},
+    profiles::{AudioEncoding, ContainerFormat, OutputFormat, Quality, VideoEncoding},
     runtime, spawn, Listable,
 };
 
@@ -69,6 +69,8 @@ mod imp {
         pub audio_encoding: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub framerate_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub quality_row: TemplateChild<adw::ComboRow>,
         // #[template_child]
         // pub link_axis: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -984,6 +986,7 @@ impl AppWindow {
                 container_format: self.selected_container(),
                 video_encoding: self.selected_video_encoding(),
                 audio_encoding: self.selected_audio_encoding(),
+                quality: Quality::from_index(self.imp().quality_row.selected()),
             },
             {
                 let f = Ratio::<i32>::approximate_float(self.imp().framerate_row.value());

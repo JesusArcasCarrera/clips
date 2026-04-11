@@ -310,6 +310,17 @@ template $AppWindow : Adw.ApplicationWindow {
                       model: StringList {};
                       styles ["property"]
                     }
+                    Adw.ComboRow quality_row {
+                      title: _("Quality");
+                      use-subtitle: true;
+                      model:
+                      StringList quality_list {
+                        strings [_("Low"), _("Medium"), _("High"), _("Unchanged")]
+                      }
+                      ;
+                      selected: 2;
+                      styles ["property"]
+                    }
                   }
 
                   Box {
