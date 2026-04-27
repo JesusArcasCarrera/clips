@@ -63,6 +63,24 @@ ninja -C build
 sudo ninja -C build install
 ```
 
+### Local user install (as "Clips")
+
+This fork ships under the user-visible name **Clips** (desktop entry, window
+title, "About" item and `glib::set_application_name`). The app id, binary
+name (`footage`) and icon resources are kept intact to avoid touching gschema
+paths and gresource lookups.
+
+To build and install into `~/.local` so the launcher shows it as *Clips*:
+
+```
+meson setup _build --prefix="$HOME/.local"
+ninja -C _build install
+```
+
+The desktop file is installed at
+`~/.local/share/applications/io.gitlab.adhami3310.Footage.desktop` and the
+binary at `~/.local/bin/footage`.
+
 ## Credits
 
 Actively developed by Khaleel Al-Adhami.

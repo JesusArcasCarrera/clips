@@ -6,7 +6,7 @@ template $AppWindow : Adw.ApplicationWindow {
   default-height: 700;
   width-request: 360;
   height-request: 300;
-  title: _("Footage");
+  title: _("Clips");
 
   Adw.ToolbarView {
     [top]
@@ -45,7 +45,7 @@ template $AppWindow : Adw.ApplicationWindow {
         child:
         Adw.StatusPage {
           icon-name: "io.gitlab.adhami3310.Footage";
-          title: _("Footage");
+          title: _("Clips");
           description: _("Choose a video to edit");
           hexpand: true;
           vexpand: true;
@@ -500,7 +500,7 @@ menu primary_menu {
     }
 
     item {
-      label: _("About Footage");
+      label: _("About Clips");
       action: "win.about";
     }
   }

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Footage
+Name=Clips
 GenericName=Video Editor
 Comment=Polish Your Videos
 Exec=footage %u

@@ -2,7 +2,7 @@
 <component type="desktop-application">
     <id>@app-id@</id>
 
-    <name>Footage</name>
+    <name>Clips</name>
     <developer id="io.gitlab.adhami3310">
         <name translate="no">Khaleel Al-Adhami</name>
     </developer>
