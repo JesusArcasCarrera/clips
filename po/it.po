@@ -1,12 +1,12 @@
 # ITALIAN TRANSLATION.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the footage package.
+# This file is distributed under the same license as the clips package.
 # ALBANO BATTISTELLA <ALBANOBATTISTELLA@GMAIL.COM>, 2023.
 # Alessandro <alessandrocarion94@gmail.com>, 2023.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: footage\n"
+"Project-Id-Version: clips\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-01-27 13:08-0300\n"
 "PO-Revision-Date: 2023-10-29 15:25+0100\n"
@@ -19,92 +19,92 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: Poedit 3.4\n"
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:2
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:5
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:2
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:5
 #: data/resources/blueprints/window.blp:9
 #: data/resources/blueprints/window.blp:42 src/main.rs:48
-msgid "Footage"
-msgstr "Footage"
+msgid "Clips"
+msgstr "Clips"
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:3
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:3
 msgid "Video Editor"
 msgstr "Editor Video"
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:4
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:4
 msgid "Polish Your Videos"
 msgstr "Rifinisci i tuoi video"
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:10
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:10
 msgid "video;edit;trim;crop;convert"
 msgstr "video;modifica;taglia;ritaglia;converti"
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:6
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:6
 msgid "Window width"
 msgstr "Larghezza della finestra"
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:10
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:10
 msgid "Window height"
 msgstr "Altezza della finestra"
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:14
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:14
 msgid "Window maximized state"
 msgstr "Stato ingrandito della finestra"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:6
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:6
 msgid "Khaleel Al-Adhami"
 msgstr "Khaleel Al-Adhami"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:7
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:7
 msgid "Polish your videos"
 msgstr "Rifinisci i tuoi video"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:13
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:13
 msgid ""
-"Trim, flip, rotate and crop individual clips. Footage is a useful tool for "
+"Trim, flip, rotate and crop individual clips. Clips is a useful tool for "
 "quickly editing short videos and screencasts. It's also capable of exporting "
 "any video into a format of your choice."
 msgstr ""
-"Taglia, capovolgi, ruota e ritaglia singole clip. Footage è uno strumento "
+"Taglia, capovolgi, ruota e ritaglia singole clip. Clips è uno strumento "
 "utile per modificare rapidamente brevi video e screencast. È anche in grado "
 "di esportare qualsiasi video in un formato a tua scelta."
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:28
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:28
 msgid "video"
 msgstr "video"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:29
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:29
 msgid "edit"
 msgstr "modifica"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:30
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:30
 msgid "trim"
 msgstr "taglia"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:31
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:31
 msgid "crop"
 msgstr "ritaglia"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:32
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:32
 msgid "convert"
 msgstr "converti"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:48
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:48
 msgid "Editing screen with default options"
 msgstr "Schermata di modifica con opzioni predefinite"
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:68
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:68
 msgid "Fixes crash when framerate is undefined."
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:73
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:73
 msgid "Fixes various random crashes."
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:78
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:78
 msgid "Fixes various bugs and upgrades to GNOME runtime 45."
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:83
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:83
 msgid ""
 "This minor release introduces a fix for X11 and additional translation "
 "support."
@@ -112,7 +112,7 @@ msgstr ""
 "Questa versione minore introduce una correzione per X11 e un supporto di "
 "traduzione aggiuntivo."
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:88
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:88
 msgid ""
 "This minor release introduces a couple of bug fixes and enhances keyboard "
 "accessibility."
@@ -120,7 +120,7 @@ msgstr ""
 "Questa versione minore introduce un paio di correzioni di bug e migliora la "
 "tastiera per l'accessibilità."
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:93
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:93
 msgid "Initial version."
 msgstr "Versione iniziale."
 
@@ -305,8 +305,8 @@ msgid "Keyboard Shortcuts"
 msgstr "Scorciatoie da tastiera"
 
 #: data/resources/blueprints/window.blp:392
-msgid "About Footage"
-msgstr "Informazioni su Footage"
+msgid "About Clips"
+msgstr "Informazioni su Clips"
 
 #: data/resources/blueprints/timeline.blp:18
 msgid "Left trimming handle"

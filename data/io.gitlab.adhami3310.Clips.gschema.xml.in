@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="footage">
-	<schema id="@app-id@" path="/io/gitlab/adhami3310/Footage/" gettext-domain="@gettext-package@">
+<schemalist gettext-domain="clips">
+	<schema id="@app-id@" path="/io/gitlab/adhami3310/Clips/" gettext-domain="@gettext-package@">
 		<key name="window-width" type="i">
 			<default>800</default>
 			<summary>Window width</summary>

@@ -24,7 +24,7 @@ message(join_paths(pkgdatadir, 'icons', scalable_dir))
 
 symbolic_dir = join_paths('icons', 'hicolor', 'symbolic', 'apps')
 install_data(
-  join_paths(symbolic_dir, ('@0@-symbolic.svg').format('io.gitlab.adhami3310.Footage')),
+  join_paths(symbolic_dir, ('@0@-symbolic.svg').format(base_id)),
   install_dir: join_paths(pkgdatadir, symbolic_dir)
 )
 

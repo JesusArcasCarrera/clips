@@ -41,7 +41,7 @@ mod imp {
     }
 
     #[derive(Debug, CompositeTemplate)]
-    #[template(resource = "/io/gitlab/adhami3310/Footage/blueprints/timeline.ui")]
+    #[template(resource = "/io/gitlab/adhami3310/Clips/blueprints/timeline.ui")]
     pub struct Timeline {
         #[template_child]
         box_timeline_position: TemplateChild<gtk::Box>,

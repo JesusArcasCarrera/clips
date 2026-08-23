@@ -1,4 +1,4 @@
-project('footage',
+project('clips',
   'rust',
   version: '1.3.3',
   meson_version: '>= 0.59.0',
@@ -8,7 +8,7 @@ project('footage',
 i18n = import('i18n')
 gnome = import('gnome')
 
-base_id = 'io.gitlab.adhami3310.Footage'
+base_id = 'io.gitlab.adhami3310.Clips'
 
 dependency('gtk4', version: '>= 4.10.0')
 dependency('libadwaita-1')

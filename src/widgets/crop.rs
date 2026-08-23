@@ -63,7 +63,7 @@ mod imp {
     }
 
     #[derive(Debug, CompositeTemplate)]
-    #[template(resource = "/io/gitlab/adhami3310/Footage/blueprints/crop.ui")]
+    #[template(resource = "/io/gitlab/adhami3310/Clips/blueprints/crop.ui")]
     pub struct Crop {
         #[template_child]
         pub crop_box: TemplateChild<gtk::Box>,

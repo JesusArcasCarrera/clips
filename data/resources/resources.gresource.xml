@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-    <gresource prefix="/io/gitlab/adhami3310/Footage/">
-        <file alias="io.gitlab.adhami3310.Footage.metainfo.xml" preprocess="xml-stripblanks">../io.gitlab.adhami3310.Footage.metainfo.xml</file>
+    <gresource prefix="/io/gitlab/adhami3310/Clips/">
+        <file alias="io.gitlab.adhami3310.Clips.metainfo.xml" preprocess="xml-stripblanks">../io.gitlab.adhami3310.Clips.metainfo.xml</file>
         <file compressed="true" preprocess="xml-stripblanks">blueprints/window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">blueprints/timeline.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">blueprints/crop.ui</file>
@@ -9,8 +9,8 @@
         <file alias="gtk/help-overlay.ui" compressed="true" preprocess="xml-stripblanks">blueprints/help-overlay.ui</file>
         <file compressed="true">style.css</file>
         <file compressed="true">style-hc.css</file>
-        <file preprocess="xml-stripblanks">icons/hicolor/symbolic/apps/io.gitlab.adhami3310.Footage-symbolic.svg</file>
-        <file preprocess="xml-stripblanks">icons/hicolor/scalable/apps/io.gitlab.adhami3310.Footage.svg</file>
-        <file preprocess="xml-stripblanks">icons/hicolor/scalable/apps/io.gitlab.adhami3310.Footage.Devel.svg</file>
+        <file preprocess="xml-stripblanks">icons/hicolor/symbolic/apps/io.gitlab.adhami3310.Clips-symbolic.svg</file>
+        <file preprocess="xml-stripblanks">icons/hicolor/scalable/apps/io.gitlab.adhami3310.Clips.svg</file>
+        <file preprocess="xml-stripblanks">icons/hicolor/scalable/apps/io.gitlab.adhami3310.Clips.Devel.svg</file>
     </gresource>
 </gresources>

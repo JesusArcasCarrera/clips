@@ -1,30 +1,24 @@
 <div align="center">
-<h1>Footage</h1>
+<h1>Clips</h1>
 
 Polish your videos.
 
-<img src="data/resources/icons/hicolor/scalable/apps/io.gitlab.adhami3310.Footage.svg" width="128" height="128" alt="Footage icon">
+<img src="data/resources/icons/hicolor/scalable/apps/io.gitlab.adhami3310.Clips.svg" width="128" height="128" alt="Clips icon">
 
-[![Installs](https://img.shields.io/flathub/downloads/io.gitlab.adhami3310.Footage?style=for-the-badge)](https://flathub.org/apps/details/io.gitlab.adhami3310.Footage)
-[![Latest Tag](https://img.shields.io/gitlab/v/tag/adhami3310/Footage?sort=date&style=for-the-badge)](https://gitlab.com/adhami3310/Footage/-/tags)
-[![License](https://img.shields.io/gitlab/license/adhami3310/Footage?style=for-the-badge)](https://gitlab.com/adhami3310/Footage/-/raw/main/COPYING)
+This fork is based on [Footage](https://gitlab.com/adhami3310/Footage).
 
 </div>
 
 
 ## Installation
-<a href='https://flathub.org/apps/details/io.gitlab.adhami3310.Footage'><img width='240' alt='Download on Flathub' src='https://flathub.org/assets/badges/flathub-badge-en.png'/></a>
 
-
-### Third Party Packages
-You may also be able to obtain Footage from your distribution's package manager. Note these packages are maintained independently and thus may differ from the official version on Flathub. Please report any issues experienced to the package maintainer.
-
-[![Packaging status](https://repology.org/badge/vertical-allrepos/footage.svg)](https://repology.org/project/footage/versions)
+Clips is currently installed from source. Flathub and distribution packages
+under the name Footage provide the upstream application, not this fork.
 
 
 ## About
 
-Trim, flip, rotate and crop individual clips. Footage is a useful tool for quickly editing short videos and screencasts. It's also capable of exporting any video into a format of your choice. See [Press](PRESS.md) for content mentioning Footage from various writers, content creators, etc.
+Trim, flip, rotate and crop individual clips. Clips is a useful tool for quickly editing short videos and screencasts. It's also capable of exporting any video into a format of your choice. See [Press](PRESS.md) for coverage of the upstream project.
 
 <img src="data/resources/screenshots/0.png" alt="Main screen with a chosen ISO and one USB memory">
 
@@ -41,16 +35,15 @@ The recommended method is to use GNOME Builder:
 
 1. Install [GNOME Builder](https://apps.gnome.org/app/org.gnome.Builder/) from Flathub
 1. Open Builder and select "Clone Repository..."
-1. Clone `https://gitlab.com/adhami3310/Footage.git` (or your fork)
+1. Open this checkout in Builder.
 1. Press "Run Project" (▶) at the top, or `Ctrl`+`Shift`+`[Spacebar]`.
 
 ### Flatpak
-You can install Footage from the latest commit:
+You can install Clips from the latest commit:
 
 1. Install [`org.flatpak.Builder`](https://github.com/flathub/org.flatpak.Builder) from Flathub
-1. Clone `https://gitlab.com/adhami3310/Footage.git` (or your fork)
-1. `cd flatpatk`
-1. Run `flatpak run org.flatpak.Builder --install --user --force-clean build-dir io.gitlab.adhami3310.Footage.json` in the terminal from the root of the repository.
+1. Open a terminal in the repository root.
+1. Run `flatpak run org.flatpak.Builder --install --user --force-clean build-dir flatpak/io.gitlab.adhami3310.Clips.json`.
 
 ### Meson
 You can build and install on your host system by directly using the Meson buildsystem:
@@ -63,12 +56,11 @@ ninja -C build
 sudo ninja -C build install
 ```
 
-### Local user install (as "Clips")
+### Local user install
 
-This fork ships under the user-visible name **Clips** (desktop entry, window
-title, "About" item and `glib::set_application_name`). The app id, binary
-name (`footage`) and icon resources are kept intact to avoid touching gschema
-paths and gresource lookups.
+This fork ships as **Clips** throughout: its binary is `clips`, its application
+ID is `io.gitlab.adhami3310.Clips`, and its data and gettext domains are
+`clips`.
 
 To build and install into `~/.local` so the launcher shows it as *Clips*:
 
@@ -78,8 +70,8 @@ ninja -C _build install
 ```
 
 The desktop file is installed at
-`~/.local/share/applications/io.gitlab.adhami3310.Footage.desktop` and the
-binary at `~/.local/bin/footage`.
+`~/.local/share/applications/io.gitlab.adhami3310.Clips.desktop` and the binary
+at `~/.local/bin/clips`.
 
 ## Credits
 

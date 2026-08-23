@@ -1,12 +1,12 @@
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
-# This file is distributed under the same license as the footage package.
+# This file is distributed under the same license as the clips package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: footage\n"
+"Project-Id-Version: clips\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-01-20 21:45-0800\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
@@ -17,69 +17,69 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:2
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:5
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:2
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:5
 #: data/resources/blueprints/window.blp:9
 #: data/resources/blueprints/window.blp:42 src/main.rs:56
-msgid "Footage"
+msgid "Clips"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:3
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:3
 msgid "Video Editor"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:4
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:4
 msgid "Polish Your Videos"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.desktop.in.in:10
+#: data/io.gitlab.adhami3310.Clips.desktop.in.in:10
 msgid "video;edit;trim;crop;convert;"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:6
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:6
 msgid "Window width"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:10
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:10
 msgid "Window height"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.gschema.xml.in:14
+#: data/io.gitlab.adhami3310.Clips.gschema.xml.in:14
 msgid "Window maximized state"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:10
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:10
 msgid "Polish your videos"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:16
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:16
 msgid ""
-"Trim, flip, rotate and crop individual clips. Footage is a useful tool for "
+"Trim, flip, rotate and crop individual clips. Clips is a useful tool for "
 "quickly editing short videos and screencasts. It's also capable of exporting "
 "any video into a format of your choice."
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:33
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:33
 msgid "video"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:34
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:34
 msgid "edit"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:35
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:35
 msgid "trim"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:36
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:36
 msgid "crop"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:37
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:37
 msgid "convert"
 msgstr ""
 
-#: data/io.gitlab.adhami3310.Footage.metainfo.xml.in.in:53
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:53
 msgid "Editing screen with default options"
 msgstr ""
 
@@ -260,7 +260,7 @@ msgid "Keyboard Shortcuts"
 msgstr ""
 
 #: data/resources/blueprints/window.blp:392
-msgid "About Footage"
+msgid "About Clips"
 msgstr ""
 
 #: data/resources/blueprints/timeline.blp:17

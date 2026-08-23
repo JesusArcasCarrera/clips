@@ -22,7 +22,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for App {
-        const NAME: &'static str = "DarkroomApp";
+        const NAME: &'static str = "ClipsApp";
         type Type = super::App;
         type ParentType = adw::Application;
 
@@ -64,7 +64,8 @@ mod imp {
                     .parent()
                     .map(|share| share.join("icons"));
 
-                if let Some(icons_path) = icons_path.and_then(|path| path.to_str().map(str::to_owned))
+                if let Some(icons_path) =
+                    icons_path.and_then(|path| path.to_str().map(str::to_owned))
                 {
                     icon_theme.add_search_path(&icons_path);
                 }
@@ -105,7 +106,7 @@ impl Default for App {
         glib::Object::builder::<Self>()
             .property("application-id", Some(APP_ID))
             .property("flags", gio::ApplicationFlags::HANDLES_OPEN)
-            .property("resource-base-path", "/io/gitlab/adhami3310/Footage/")
+            .property("resource-base-path", "/io/gitlab/adhami3310/Clips/")
             .build()
     }
 }
@@ -157,7 +158,7 @@ impl App {
     }
 
     pub fn run(&self) -> ExitCode {
-        info!("Footage ({})", APP_ID);
+        info!("Clips ({})", APP_ID);
         info!("Version: {} ({})", VERSION, PROFILE);
         info!("Datadir: {}", PKGDATADIR);
 

@@ -32,7 +32,7 @@ mod imp {
     use gtk::CompositeTemplate;
 
     #[derive(CompositeTemplate, Default)]
-    #[template(resource = "/io/gitlab/adhami3310/Footage/blueprints/video-preview.ui")]
+    #[template(resource = "/io/gitlab/adhami3310/Clips/blueprints/video-preview.ui")]
     pub struct VideoPreview {
         #[template_child]
         pub paint: TemplateChild<gtk::Picture>,

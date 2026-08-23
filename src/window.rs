@@ -33,7 +33,7 @@ mod imp {
 
     #[derive(CompositeTemplate, Derivative)]
     #[derivative(Default)]
-    #[template(resource = "/io/gitlab/adhami3310/Footage/blueprints/window.ui")]
+    #[template(resource = "/io/gitlab/adhami3310/Clips/blueprints/window.ui")]
     pub struct AppWindow {
         #[template_child]
         pub video_preview: TemplateChild<VideoPreview>,
@@ -1105,7 +1105,7 @@ impl AppWindow {
 
     fn show_about(&self) {
         let about = adw::AboutDialog::from_appdata(
-            "/io/gitlab/adhami3310/Footage/io.gitlab.adhami3310.Footage.metainfo.xml",
+            "/io/gitlab/adhami3310/Clips/io.gitlab.adhami3310.Clips.metainfo.xml",
             Some("1.3"),
         );
 

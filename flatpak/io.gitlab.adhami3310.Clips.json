@@ -1,5 +1,5 @@
 {
-    "id": "io.gitlab.adhami3310.Footage",
+    "id": "io.gitlab.adhami3310.Clips",
     "runtime": "org.gnome.Platform",
     "runtime-version": "49",
     "sdk": "org.gnome.Sdk",
@@ -22,7 +22,7 @@
     "cleanup-commands": [
         "mkdir -p ${FLATPAK_DEST}/lib/ffmpeg"
     ],
-    "command": "footage",
+    "command": "clips",
     "finish-args": [
         "--share=ipc",
         "--socket=fallback-x11",
@@ -37,7 +37,7 @@
             "GST_PLUGIN_SYSTEM_PATH": "/app/lib/gstreamer-1.0/",
             "GST_ENCODING_TARGET_PATH": "/app/share/gstreamer-1.0/encoding-profiles/:/app/share/pitivi/encoding-profiles/",
             "GST_VAAPI_ALL_DRIVERS": "1",
-            "CARGO_HOME": "/run/build/footage/cargo"
+            "CARGO_HOME": "/run/build/clips/cargo"
         },
         "append-ld-library-path": "/app/lib/codecs/lib",
         "ldflags": "-L/app/lib/codecs/lib"
@@ -331,7 +331,7 @@
             }
         },
         {
-            "name": "footage",
+            "name": "clips",
             "builddir": true,
             "buildsystem": "meson",
             "config-opts": [
