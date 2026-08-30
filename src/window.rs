@@ -8,9 +8,12 @@ use gtk::{gdk, gio, glib, subclass::prelude::*};
 use itertools::Itertools;
 
 use crate::{
+    adjustments::{ColorAdjustments, PlaybackSpeed, Repeat, RepeatMode},
     info::{Dimensions, Framerate},
     profiles::{AudioEncoding, ContainerFormat, OutputFormat, Quality, VideoEncoding},
-    runtime, spawn, Listable,
+    runtime,
+    segments::{ClipRange, SegmentExportMode},
+    spawn, Listable,
 };
 
 mod imp {
@@ -71,10 +74,20 @@ mod imp {
         pub framerate_row: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub quality_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub gpu_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub encoder_status_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub encoder_status_icon: TemplateChild<gtk::Image>,
         // #[template_child]
         // pub link_axis: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub resize_type: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub resize_amount_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub enhance_quality_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub resize_scale_width_value: TemplateChild<gtk::Entry>,
         #[template_child]
@@ -85,8 +98,6 @@ mod imp {
         pub resize_height_value: TemplateChild<gtk::Entry>,
         #[template_child]
         pub cancel_button: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub back_edit: TemplateChild<gtk::Button>,
         #[template_child]
         pub success_status: TemplateChild<adw::StatusPage>,
         #[template_child]
@@ -101,12 +112,47 @@ mod imp {
         pub toggle_sidebar_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub settings_sidebar_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub adjustments_row: TemplateChild<adw::ExpanderRow>,
+        #[template_child]
+        pub adjust_brightness: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjust_contrast: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjust_saturation: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjust_hue: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjust_gamma: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjust_sharpness: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub adjustments_reset: TemplateChild<adw::ButtonRow>,
+        #[template_child]
+        pub repeat_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub speed_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub repeat_count_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub add_segment_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub remove_segment_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub segment_export_mode: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub sections_list: TemplateChild<gtk::ListBox>,
 
         pub running_flag: Arc<AtomicBool>,
         pub video_dimensions: Cell<Option<Dimensions<u32>>>,
         pub selected_video_dimensions: Cell<Option<Dimensions<u32>>>,
         pub selected_video_path: RefCell<Option<PathBuf>>,
         pub result_video_path: RefCell<Option<PathBuf>>,
+        pub segments: RefCell<Vec<ClipRange>>,
+        pub active_segment: Cell<usize>,
+        pub updating_segments: Cell<bool>,
+        #[derivative(Default(value = "Cell::new(true)"))]
+        pub gpu_preference: Cell<bool>,
         pub provider: gtk::CssProvider,
         #[derivative(Default(value = "gio::Settings::new(APP_ID)"))]
         pub settings: gio::Settings,
@@ -232,6 +278,32 @@ impl AppWindow {
                 .to_list(),
         ));
 
+        win.imp().repeat_row.set_model(Some(
+            &RepeatMode::get_all()
+                .into_iter()
+                .map(|m| m.for_display())
+                .collect_vec()
+                .to_list(),
+        ));
+
+        win.imp().speed_row.set_model(Some(
+            &PlaybackSpeed::get_all()
+                .into_iter()
+                .map(|speed| speed.for_display())
+                .collect_vec()
+                .to_list(),
+        ));
+
+        win.imp().segment_export_mode.set_model(Some(
+            &SegmentExportMode::get_all()
+                .into_iter()
+                .map(|mode| mode.for_display())
+                .collect_vec()
+                .to_list(),
+        ));
+
+        win.update_options();
+
         win
     }
 
@@ -271,8 +343,7 @@ impl AppWindow {
 
     fn setup_callbacks(&self) {
         let imp = self.imp();
-        let drop_target =
-            gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+        let drop_target = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
         drop_target.set_types(&[
             gdk::FileList::static_type(),
             gio::File::static_type(),
@@ -285,9 +356,14 @@ impl AppWindow {
             #[upgrade_or]
             gdk::DragAction::empty(),
             move |_, _, _| {
-                eprintln!("dnd: enter on welcome={:?}", this.imp().stack.visible_child_name());
+                eprintln!(
+                    "dnd: enter on welcome={:?}",
+                    this.imp().stack.visible_child_name()
+                );
                 if this.imp().stack.visible_child_name().as_deref() == Some("welcome") {
-                    this.imp().open_video_button.add_css_class("drop-zone-active");
+                    this.imp()
+                        .open_video_button
+                        .add_css_class("drop-zone-active");
                     gdk::DragAction::COPY
                 } else {
                     gdk::DragAction::empty()
@@ -300,9 +376,14 @@ impl AppWindow {
             #[upgrade_or]
             gdk::DragAction::empty(),
             move |_, _, _| {
-                eprintln!("dnd: motion on welcome={:?}", this.imp().stack.visible_child_name());
+                eprintln!(
+                    "dnd: motion on welcome={:?}",
+                    this.imp().stack.visible_child_name()
+                );
                 if this.imp().stack.visible_child_name().as_deref() == Some("welcome") {
-                    this.imp().open_video_button.add_css_class("drop-zone-active");
+                    this.imp()
+                        .open_video_button
+                        .add_css_class("drop-zone-active");
                     gdk::DragAction::COPY
                 } else {
                     gdk::DragAction::empty()
@@ -314,7 +395,9 @@ impl AppWindow {
             self,
             move |_| {
                 eprintln!("dnd: leave");
-                this.imp().open_video_button.remove_css_class("drop-zone-active");
+                this.imp()
+                    .open_video_button
+                    .remove_css_class("drop-zone-active");
             }
         ));
         drop_target.connect_drop(clone!(
@@ -323,7 +406,9 @@ impl AppWindow {
             #[upgrade_or]
             false,
             move |_, value, _, _| {
-                this.imp().open_video_button.remove_css_class("drop-zone-active");
+                this.imp()
+                    .open_video_button
+                    .remove_css_class("drop-zone-active");
                 eprintln!("dnd: drop type={}", value.type_().name());
 
                 if this.imp().stack.visible_child_name().as_deref() != Some("welcome") {
@@ -433,7 +518,6 @@ impl AppWindow {
             self,
             move |_| {
                 this.imp().stack.set_visible_child_name("welcome");
-                this.imp().back_edit.set_visible(false);
                 this.imp().toggle_sidebar_button.set_visible(false);
             }
         ));
@@ -444,28 +528,96 @@ impl AppWindow {
                 this.convert_cancel(false);
             }
         ));
-        imp.back_edit.connect_clicked(clone!(
-            #[weak(rename_to=this)]
-            self,
-            move |g| {
-                this.imp().video_preview.refresh_ui();
-                g.set_visible(false);
-            }
-        ));
         imp.open_result.connect_clicked(clone!(
             #[weak(rename_to=this)]
             self,
             move |_| {
-                let file =
-                    std::fs::File::open(this.imp().result_video_path.borrow().as_ref().unwrap())
-                        .unwrap();
-                runtime().spawn(async move {
-                    ashpd::desktop::open_uri::OpenFileRequest::default()
-                        .ask(true)
-                        .send_file(&file.as_fd())
-                        .await
-                        .ok();
-                });
+                this.open_exported_result();
+            }
+        ));
+        for scale in [
+            &imp.adjust_brightness,
+            &imp.adjust_contrast,
+            &imp.adjust_saturation,
+            &imp.adjust_hue,
+            &imp.adjust_gamma,
+            &imp.adjust_sharpness,
+        ] {
+            scale.connect_value_changed(clone!(
+                #[weak(rename_to=this)]
+                self,
+                move |_| {
+                    this.apply_color_adjustments();
+                }
+            ));
+        }
+        imp.adjustments_reset.connect_activated(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.reset_color_adjustments();
+            }
+        ));
+        imp.repeat_row.connect_selected_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |row| {
+                // A loop of one cycle is a no-op, while a single boomerang cycle is
+                // already forwards+backwards — so they want different defaults.
+                let count = match RepeatMode::from_index(row.selected()) {
+                    RepeatMode::Boomerang => 1.,
+                    _ => 2.,
+                };
+                this.imp().repeat_count_row.set_value(count);
+                this.update_repeat_ui();
+                this.update_speed_ui();
+            }
+        ));
+        imp.repeat_count_row.connect_value_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.update_repeat_ui();
+                this.update_speed_ui();
+            }
+        ));
+        imp.speed_row.connect_selected_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.update_speed_ui();
+            }
+        ));
+        imp.sections_list.connect_row_selected(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_, row| {
+                if !this.imp().updating_segments.get() {
+                    if let Some(row) = row {
+                        this.select_segment(row.index() as usize);
+                    }
+                }
+            }
+        ));
+        imp.add_segment_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.add_segment_at_playhead();
+            }
+        ));
+        imp.remove_segment_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.remove_active_segment();
+            }
+        ));
+        imp.segment_export_mode.connect_selected_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.update_segments_ui();
             }
         ));
         imp.container_row.connect_selected_notify(clone!(
@@ -473,6 +625,23 @@ impl AppWindow {
             self,
             move |_| {
                 this.update_options();
+            }
+        ));
+        imp.video_encoding.connect_selected_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.update_encoder_status();
+            }
+        ));
+        imp.gpu_row.connect_active_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |row| {
+                if row.is_sensitive() {
+                    this.imp().gpu_preference.set(row.is_active());
+                }
+                this.update_encoder_status();
             }
         ));
         imp.resize_type.connect_selected_notify(clone!(
@@ -494,6 +663,13 @@ impl AppWindow {
                     }
                     _ => unreachable!(),
                 }
+            }
+        ));
+        imp.enhance_quality_row.connect_active_notify(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.update_enhance_quality_ui();
             }
         ));
         imp.resize_width_value.connect_changed(clone!(
@@ -651,6 +827,10 @@ impl AppWindow {
                     {
                         this.imp().video_preview.set_range(start, end);
                     }
+                    this.update_active_segment(start, end);
+                    // The trimmed length drives the loop/boomerang length hint.
+                    this.update_repeat_ui();
+                    this.update_speed_ui();
                     None
                 }
             ),
@@ -861,6 +1041,21 @@ impl AppWindow {
     async fn save_dialog(&self) {
         let input_path = self.imp().selected_video_path.borrow().to_owned().unwrap();
 
+        if self.selected_segment_export_mode() == SegmentExportMode::Separate {
+            if let Ok(folder) = gtk::FileDialog::builder()
+                .modal(true)
+                .title(gettext("Choose Where to Save the Clips"))
+                .build()
+                .select_folder_future(Some(self))
+                .await
+            {
+                if let Some(path) = folder.path() {
+                    self.save_file(path);
+                }
+            }
+            return;
+        }
+
         let input_path_stem = input_path.file_stem().unwrap().to_str().unwrap().to_owned();
 
         let extension = match self.selected_container() {
@@ -901,6 +1096,334 @@ impl AppWindow {
         }
     }
 
+    /// The colour correction currently dialled in on the sliders.
+    fn color_adjustments(&self) -> ColorAdjustments {
+        let imp = self.imp();
+
+        ColorAdjustments {
+            brightness: imp.adjust_brightness.value(),
+            contrast: imp.adjust_contrast.value(),
+            saturation: imp.adjust_saturation.value(),
+            hue: imp.adjust_hue.value(),
+            gamma: imp.adjust_gamma.value(),
+            sharpness: imp.adjust_sharpness.value(),
+        }
+    }
+
+    fn apply_color_adjustments(&self) {
+        let adjustments = self.color_adjustments();
+
+        self.imp()
+            .adjustments_row
+            .set_subtitle(&if adjustments.is_neutral() {
+                gettext("Brightness, contrast, colour, sharpness")
+            } else {
+                gettext("Modified")
+            });
+
+        self.imp().video_preview.set_color_adjustments(adjustments);
+    }
+
+    fn reset_color_adjustments(&self) {
+        let imp = self.imp();
+        let neutral = ColorAdjustments::NEUTRAL;
+
+        imp.adjust_brightness.set_value(neutral.brightness);
+        imp.adjust_contrast.set_value(neutral.contrast);
+        imp.adjust_saturation.set_value(neutral.saturation);
+        imp.adjust_hue.set_value(neutral.hue);
+        imp.adjust_gamma.set_value(neutral.gamma);
+        imp.adjust_sharpness.set_value(neutral.sharpness);
+
+        self.apply_color_adjustments();
+    }
+
+    fn multi_segments_supported(&self) -> bool {
+        !matches!(
+            self.selected_container(),
+            ContainerFormat::Same | ContainerFormat::GifContainer
+        )
+    }
+
+    fn update_enhance_quality_ui(&self) {
+        let imp = self.imp();
+        let supported = self.multi_segments_supported();
+        if !supported && imp.enhance_quality_row.is_active() {
+            imp.enhance_quality_row.set_active(false);
+        }
+
+        imp.enhance_quality_row.set_sensitive(supported);
+        imp.enhance_quality_row.set_subtitle(&if supported {
+            gettext("Export at 2× with high-quality upscaling")
+        } else {
+            gettext("Choose MP4, WebM or Matroska in Export")
+        });
+        imp.resize_amount_row
+            .set_sensitive(!imp.enhance_quality_row.is_active());
+        imp.resize_amount_row
+            .set_subtitle(&if imp.enhance_quality_row.is_active() {
+                gettext("Controlled by Improve Quality · 200%")
+            } else {
+                String::new()
+            });
+    }
+
+    fn reset_segments(&self, duration_ms: u64) {
+        self.imp()
+            .segments
+            .replace(vec![ClipRange::new(0, duration_ms)]);
+        self.imp().active_segment.set(0);
+        self.update_segments_ui();
+    }
+
+    fn update_active_segment(&self, start_ms: u64, end_ms: u64) {
+        let imp = self.imp();
+        let active = imp.active_segment.get();
+        if let Some(range) = imp.segments.borrow_mut().get_mut(active) {
+            *range = ClipRange::new(start_ms, end_ms);
+        }
+        self.update_segments_ui();
+    }
+
+    fn add_segment_at_playhead(&self) {
+        if !self.multi_segments_supported() {
+            return;
+        }
+
+        let duration = self.imp().timeline.duration();
+        if duration == 0 {
+            return;
+        }
+
+        const DEFAULT_SECTION_MS: u64 = 5_000;
+        let position = self.imp().timeline.position().min(duration);
+        let (start, end) = if position + DEFAULT_SECTION_MS <= duration {
+            (position, position + DEFAULT_SECTION_MS)
+        } else {
+            (duration.saturating_sub(DEFAULT_SECTION_MS), duration)
+        };
+
+        let index = {
+            let mut segments = self.imp().segments.borrow_mut();
+            segments.push(ClipRange::new(start, end));
+            segments.len() - 1
+        };
+        self.select_segment(index);
+        self.update_segments_ui();
+    }
+
+    fn remove_active_segment(&self) {
+        let imp = self.imp();
+        if imp.segments.borrow().len() <= 1 {
+            return;
+        }
+
+        let index = imp.active_segment.get();
+        imp.segments.borrow_mut().remove(index);
+        let next = index.min(imp.segments.borrow().len() - 1);
+        self.select_segment(next);
+        self.update_segments_ui();
+    }
+
+    fn select_segment(&self, index: usize) {
+        let imp = self.imp();
+        let range = {
+            let segments = imp.segments.borrow();
+            segments.get(index).copied()
+        };
+        let Some(range) = range else {
+            return;
+        };
+
+        imp.active_segment.set(index);
+        imp.video_preview.pause();
+        imp.timeline.set_range(Some((range.start_ms, range.end_ms)));
+        imp.timeline.set_position(range.start_ms);
+        imp.video_preview.set_range(range.start_ms, range.end_ms);
+        imp.video_preview.seek(range.start_ms);
+
+        imp.updating_segments.set(true);
+        if let Some(row) = imp.sections_list.row_at_index(index as i32) {
+            imp.sections_list.select_row(Some(&row));
+        }
+        imp.updating_segments.set(false);
+        self.update_repeat_ui();
+    }
+
+    fn selected_segment_export_mode(&self) -> SegmentExportMode {
+        if self.imp().segments.borrow().len() <= 1 {
+            SegmentExportMode::Join
+        } else {
+            SegmentExportMode::from_index(self.imp().segment_export_mode.selected())
+        }
+    }
+
+    fn update_segments_ui(&self) {
+        let imp = self.imp();
+        let segments = imp.segments.borrow();
+
+        imp.updating_segments.set(true);
+        while let Some(child) = imp.sections_list.first_child() {
+            imp.sections_list.remove(&child);
+        }
+        for (index, range) in segments.iter().enumerate() {
+            let row = adw::ActionRow::builder()
+                .title(gettext("Section {}").replace("{}", &(index + 1).to_string()))
+                .subtitle(
+                    gettext("{} – {} · {}")
+                        .replacen("{}", &format_duration_ms(range.start_ms), 1)
+                        .replacen("{}", &format_duration_ms(range.end_ms), 1)
+                        .replacen("{}", &format_duration_ms(range.duration_ms()), 1),
+                )
+                .activatable(true)
+                .build();
+            imp.sections_list.append(&row);
+        }
+        if !segments.is_empty() {
+            if let Some(row) = imp
+                .sections_list
+                .row_at_index(imp.active_segment.get().min(segments.len() - 1) as i32)
+            {
+                imp.sections_list.select_row(Some(&row));
+            }
+        }
+        imp.updating_segments.set(false);
+
+        let multiple = segments.len() > 1;
+        let supported = self.multi_segments_supported();
+        let valid = segments.iter().all(|range| range.duration_ms() > 0);
+        imp.remove_segment_button.set_sensitive(multiple);
+        imp.segment_export_mode.set_visible(multiple);
+        imp.add_segment_button.set_sensitive(supported);
+        imp.add_segment_button.set_tooltip_text(Some(&if supported {
+            gettext("Add Section at Playhead")
+        } else {
+            gettext("Multiple sections are not available for this container format")
+        }));
+
+        imp.save_button
+            .set_sensitive(valid && (!multiple || supported));
+        let save_tooltip = if valid && (!multiple || supported) {
+            None
+        } else if !valid {
+            Some(gettext("Every section must have a duration"))
+        } else {
+            Some(gettext(
+                "Choose a container format that supports multiple sections",
+            ))
+        };
+        imp.save_button.set_tooltip_text(save_tooltip.as_deref());
+        imp.save_button.set_label(&if multiple
+            && self.selected_segment_export_mode() == SegmentExportMode::Separate
+        {
+            gettext("Save Clips")
+        } else {
+            gettext("Save Video")
+        });
+
+        drop(segments);
+        self.update_repeat_ui();
+    }
+
+    /// Whether the selected container can be exported through the ffmpeg render path,
+    /// which is the only one that implements loop and boomerang.
+    fn repeat_is_supported(&self) -> bool {
+        self.imp().segments.borrow().len() <= 1
+            && !matches!(
+                self.selected_container(),
+                ContainerFormat::Same | ContainerFormat::GifContainer
+            )
+    }
+
+    fn selected_repeat(&self) -> Repeat {
+        if !self.repeat_is_supported() {
+            return Repeat::OFF;
+        }
+
+        Repeat {
+            mode: RepeatMode::from_index(self.imp().repeat_row.selected()),
+            count: self.imp().repeat_count_row.value().round().max(1.) as u32,
+        }
+    }
+
+    fn speed_is_supported(&self) -> bool {
+        self.multi_segments_supported()
+    }
+
+    fn selected_playback_speed(&self) -> PlaybackSpeed {
+        if self.speed_is_supported() {
+            PlaybackSpeed::from_index(self.imp().speed_row.selected())
+        } else {
+            PlaybackSpeed::Normal
+        }
+    }
+
+    fn update_speed_ui(&self) {
+        let imp = self.imp();
+        let supported = self.speed_is_supported();
+        imp.speed_row.set_sensitive(supported);
+
+        let speed = self.selected_playback_speed();
+        imp.video_preview.set_playback_rate(speed.factor());
+
+        let subtitle = if !supported {
+            gettext("Not available for this container format")
+        } else if speed.is_normal() {
+            gettext("Change video and audio speed")
+        } else {
+            let source_ms = imp
+                .segments
+                .borrow()
+                .iter()
+                .map(|range| range.duration_ms())
+                .sum::<u64>();
+            let slowed_ms = speed.output_duration_ms(source_ms);
+            let output_ms = self.selected_repeat().output_duration_ms(slowed_ms);
+            gettext("Resulting length: {}").replace("{}", &format_duration_ms(output_ms))
+        };
+        imp.speed_row.set_subtitle(&subtitle);
+    }
+
+    /// Keeps the repeat rows in sync: the cycle count only matters when a mode is
+    /// picked, and the hint spells out how long the export will end up being.
+    fn update_repeat_ui(&self) {
+        let imp = self.imp();
+
+        let supported = self.repeat_is_supported();
+        imp.repeat_row.set_sensitive(supported);
+        imp.repeat_row.set_subtitle(&if supported {
+            String::new()
+        } else if imp.segments.borrow().len() > 1 {
+            gettext("Not available with multiple sections")
+        } else {
+            gettext("Not available for this container format")
+        });
+
+        let repeat = self.selected_repeat();
+        let active = supported && repeat.mode != RepeatMode::Off;
+        imp.repeat_count_row.set_visible(active);
+
+        if !active {
+            return;
+        }
+
+        let selection_ms = imp
+            .video_preview
+            .imp()
+            .outpoint
+            .get()
+            .saturating_sub(imp.video_preview.imp().inpoint.get());
+        let selection_ms = self
+            .selected_playback_speed()
+            .output_duration_ms(selection_ms);
+
+        imp.repeat_count_row
+            .set_subtitle(&gettext("Resulting length: {}").replace(
+                "{}",
+                &format_duration_ms(repeat.output_duration_ms(selection_ms)),
+            ));
+    }
+
     fn update_options(&self) {
         let imp = self.imp();
 
@@ -925,51 +1448,167 @@ impl AppWindow {
                 .collect_vec()
                 .to_list(),
         ));
+
+        self.update_encoder_status();
+        self.update_segments_ui();
+        self.update_enhance_quality_ui();
+        self.update_speed_ui();
+    }
+
+    fn open_exported_result(&self) {
+        let Some(path) = self.imp().result_video_path.borrow().clone() else {
+            return;
+        };
+
+        runtime().spawn(async move {
+            let Ok(file) = std::fs::File::open(&path) else {
+                log::error!("could not open exported result: {}", path.display());
+                return;
+            };
+
+            if path.is_dir() {
+                if let Err(err) = ashpd::desktop::open_uri::OpenDirectoryRequest::default()
+                    .send(&file.as_fd())
+                    .await
+                {
+                    log::error!("could not open export directory: {err}");
+                }
+            } else if let Err(err) = ashpd::desktop::open_uri::OpenFileRequest::default()
+                .ask(true)
+                .send_file(&file.as_fd())
+                .await
+            {
+                log::error!("could not open exported file: {err}");
+            }
+        });
+    }
+
+    /// Updates the "Encoder" row to clearly show whether the export will run on the
+    /// GPU (NVENC) or the CPU (software), based on the selected codec and the
+    /// hardware-acceleration switch.
+    fn update_encoder_status(&self) {
+        let imp = self.imp();
+
+        let Some(video_encoding) = self.selected_video_encoding() else {
+            imp.encoder_status_row.set_visible(false);
+            imp.gpu_row.set_visible(false);
+            return;
+        };
+
+        imp.encoder_status_row.set_visible(true);
+        imp.gpu_row.set_visible(true);
+
+        let ffmpeg_path = self.multi_segments_supported();
+        let (software_name, ffmpeg_hardware) = video_encoding.ffmpeg_encoders();
+        let (hardware_name, hardware_available) = if ffmpeg_path {
+            (
+                ffmpeg_hardware,
+                ffmpeg_hardware
+                    .map(crate::widgets::preview::ffmpeg_has_encoder)
+                    .unwrap_or(false),
+            )
+        } else {
+            let resolved = video_encoding.resolve_encoder(true);
+            (
+                resolved.hardware.then_some(resolved.element),
+                resolved.hardware,
+            )
+        };
+
+        imp.gpu_row.set_sensitive(hardware_available);
+        imp.gpu_row
+            .set_active(hardware_available && imp.gpu_preference.get());
+        imp.gpu_row
+            .set_subtitle(&match (hardware_name, hardware_available) {
+                (None, _) => gettext("Not supported by the selected video codec"),
+                (Some(_), false) => gettext("No compatible hardware encoder was found"),
+                (Some(_), true) => gettext("Use the available hardware encoder"),
+            });
+
+        let hardware_active = hardware_available && imp.gpu_row.is_active();
+        let encoder_label = if hardware_active {
+            format!("GPU · NVENC ({})", hardware_name.unwrap())
+        } else if ffmpeg_path {
+            format!("CPU · {software_name} (software)")
+        } else {
+            video_encoding.resolve_encoder(false).label()
+        };
+        imp.encoder_status_row.set_subtitle(&encoder_label);
+        imp.encoder_status_icon
+            .set_icon_name(Some(if hardware_active {
+                "power-profile-performance-symbolic"
+            } else {
+                "power-profile-power-saver-symbolic"
+            }));
     }
 
     fn save_file(&self, path: PathBuf) {
         self.imp().result_video_path.replace(Some(path.clone()));
 
-        let file_name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        let segments = self.imp().segments.borrow().clone();
+        let segment_export_mode = self.selected_segment_export_mode();
+        let target_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned();
 
         self.imp()
             .success_status
-            .set_description(Some(&gettext("Saved as {}").replace("{}", &file_name)));
+            .set_description(Some(
+                &if segment_export_mode == SegmentExportMode::Separate {
+                    gettext("Saved {} clips in {}")
+                        .replacen("{}", &segments.len().to_string(), 1)
+                        .replacen("{}", &target_name, 1)
+                } else {
+                    gettext("Saved as {}").replace("{}", &target_name)
+                },
+            ));
 
         self.imp()
             .stack
             .set_transition_type(gtk::StackTransitionType::None);
+        self.imp().toggle_sidebar_button.set_visible(false);
         self.imp().stack.set_visible_child_name("exporting");
         glib::MainContext::default().iteration(true);
         self.imp()
             .stack
             .set_transition_type(gtk::StackTransitionType::Crossfade);
 
-        let (scaled_width, scaled_height) = match self.imp().resize_type.selected() {
-            0 => {
-                let (sw, sh): (u32, u32) = (
-                    self.imp().resize_scale_width_value.text().parse().unwrap(),
-                    self.imp().resize_scale_height_value.text().parse().unwrap(),
-                );
+        let (scaled_width, scaled_height) = if self.imp().enhance_quality_row.is_active() {
+            let dimensions = self.imp().selected_video_dimensions.get().unwrap();
+            (
+                dimensions.width.saturating_mul(2) / 2 * 2,
+                dimensions.height.saturating_mul(2) / 2 * 2,
+            )
+        } else {
+            match self.imp().resize_type.selected() {
+                0 => {
+                    let (sw, sh): (u32, u32) = (
+                        self.imp().resize_scale_width_value.text().parse().unwrap(),
+                        self.imp().resize_scale_height_value.text().parse().unwrap(),
+                    );
 
-                let selected_video_dimensions = self.imp().selected_video_dimensions.get().unwrap();
+                    let selected_video_dimensions =
+                        self.imp().selected_video_dimensions.get().unwrap();
 
-                (
-                    selected_video_dimensions.width * sw / 100 / 2 * 2,
-                    selected_video_dimensions.height * sh / 100 / 2 * 2,
-                )
+                    (
+                        selected_video_dimensions.width * sw / 100 / 2 * 2,
+                        selected_video_dimensions.height * sh / 100 / 2 * 2,
+                    )
+                }
+                1 => (
+                    self.imp().resize_width_value.text().parse::<u32>().unwrap() / 2 * 2,
+                    self.imp()
+                        .resize_height_value
+                        .text()
+                        .parse::<u32>()
+                        .unwrap()
+                        / 2
+                        * 2,
+                ),
+                _ => unreachable!(),
             }
-            1 => (
-                self.imp().resize_width_value.text().parse::<u32>().unwrap() / 2 * 2,
-                self.imp()
-                    .resize_height_value
-                    .text()
-                    .parse::<u32>()
-                    .unwrap()
-                    / 2
-                    * 2,
-            ),
-            _ => unreachable!(),
         };
 
         let running_flag = self.imp().running_flag.clone();
@@ -1006,11 +1645,11 @@ impl AppWindow {
                 width: scaled_width,
                 height: scaled_height,
             },
-            false,
-            crate::adjustments::Repeat::default(),
-            crate::adjustments::PlaybackSpeed::Normal,
-            Vec::new(),
-            crate::segments::SegmentExportMode::Join,
+            self.imp().gpu_row.is_active(),
+            self.selected_repeat(),
+            self.selected_playback_speed(),
+            segments,
+            segment_export_mode,
             running_flag,
         );
 
@@ -1027,7 +1666,6 @@ impl AppWindow {
                     match p {
                         Ok((done, total)) if done == total => {
                             this.imp().stack.set_visible_child_name("success");
-                            this.imp().back_edit.set_visible(true);
                             this.imp()
                                 .running_flag
                                 .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -1054,6 +1692,8 @@ impl AppWindow {
 
     async fn create_ui(&self, path: PathBuf) {
         self.imp().video_preview.reset();
+        self.reset_color_adjustments();
+        self.imp().speed_row.set_selected(0);
         let Ok((dimensions, duration, framerate, has_audio)) =
             self.imp().video_preview.load_path(path).await
         else {
@@ -1073,6 +1713,7 @@ impl AppWindow {
         self.imp().timeline.set_position(0);
         self.imp().timeline.set_duration(duration);
         self.imp().timeline.set_range(Some((0, duration)));
+        self.reset_segments(duration);
         self.imp().video_dimensions.set(Some(dimensions));
         self.imp().selected_video_dimensions.set(Some(dimensions));
         self.imp().resize_scale_height_value.set_text("100");
@@ -1086,6 +1727,8 @@ impl AppWindow {
         self.imp()
             .framerate_row
             .set_value(framerate.map(|x| x.value().min(240.)).unwrap_or(30.));
+        self.update_repeat_ui();
+        self.update_speed_ui();
     }
 
     pub fn mark_ui_as_ready(&self) {
@@ -1156,6 +1799,22 @@ impl SettingsStore for AppWindow {
         if is_maximized {
             self.maximize();
         }
+    }
+}
+
+/// `m:ss`, or `h:mm:ss` once it passes an hour.
+fn format_duration_ms(ms: u64) -> String {
+    let total_seconds = (ms + 999) / 1000;
+    let (hours, minutes, seconds) = (
+        total_seconds / 3600,
+        (total_seconds / 60) % 60,
+        total_seconds % 60,
+    );
+
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
     }
 }
 

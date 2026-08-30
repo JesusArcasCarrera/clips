@@ -11,13 +11,6 @@ template $AppWindow : Adw.ApplicationWindow {
   Adw.ToolbarView {
     [top]
     Adw.HeaderBar headerbar {
-      Button back_edit {
-        icon-name: 'go-previous-symbolic';
-        tooltip-text: _('Edit Same Video');
-        visible: false;
-        styles ['flat']
-      }
-
       [end]
       Button toggle_sidebar_button {
         icon-name: 'sidebar-show-symbolic';
@@ -193,144 +186,427 @@ template $AppWindow : Adw.ApplicationWindow {
             transition-type: slide_left;
 
             [child]
-            ScrolledWindow settings_sidebar {
-              hscrollbar-policy: never;
-              vscrollbar-policy: automatic;
-              width-request: 300;
+            Box settings_sidebar {
+              orientation: vertical;
+              width-request: 320;
 
-              Adw.Clamp {
-                maximum-size: 400;
+              Adw.ViewSwitcher {
+                stack: sidebar_pages;
+                policy: wide;
                 margin-start: 12;
                 margin-end: 12;
                 margin-top: 12;
-                margin-bottom: 12;
+                margin-bottom: 8;
+              }
 
-                Box {
-                  orientation: vertical;
-                  spacing: 24;
+              Separator {}
 
-                  ListBox {
-                    selection-mode: none;
-                    styles ["boxed-list"]
+              Adw.ViewStack sidebar_pages {
+                vexpand: true;
 
-                    Adw.ActionRow resize_amount_row {
-                      title: _("Resize");
+                Adw.ViewStackPage {
+                  name: "sections";
+                  title: _("Sections");
+                  icon-name: "view-list-symbolic";
+                  child:
+                  ScrolledWindow {
+                    hscrollbar-policy: never;
+                    vscrollbar-policy: automatic;
+
+                    Adw.Clamp {
+                      maximum-size: 400;
+                      margin-start: 12;
+                      margin-end: 12;
+                      margin-top: 12;
+                      margin-bottom: 12;
+
                       Box {
-                        spacing: 5;
-                        Entry resize_width_value {
-                          valign: center;
-                          placeholder-text: _("Width");
-                          tooltip-text: _("Width");
-                          input-purpose: digits;
-                          max-width-chars: 6;
-                          visible: false;
-                          hexpand: false;
+                        orientation: vertical;
+                        spacing: 12;
+
+                        Label {
+                          label: _("Select a section to edit it in the timeline. The list order is the export order.");
+                          wrap: true;
+                          xalign: 0;
+                          styles ["dim-label"]
                         }
-                        Entry resize_scale_width_value {
-                          valign: center;
-                          placeholder-text: _("Width");
-                          input-purpose: digits;
-                          tooltip-text: _("Width");
-                          max-width-chars: 6;
-                          hexpand: false;
+
+                        ListBox sections_list {
+                          selection-mode: single;
+                          styles ["boxed-list"]
                         }
-                        Image link_axis {
-                          valign: center;
-                          icon-name: 'chain-link-symbolic';
-                          tooltip-text: _("Preserve aspect ratio");
-                          styles ['lock']
-                        }
-                        Entry resize_height_value {
-                          valign: center;
-                          placeholder-text: _("Height");
-                          tooltip-text: _("Height");
-                          input-purpose: digits;
-                          max-width-chars: 6;
-                          visible: false;
-                          hexpand: false;
-                        }
-                        Entry resize_scale_height_value {
-                          valign: center;
-                          placeholder-text: _("Height");
-                          input-purpose: digits;
-                          tooltip-text: _("Height");
-                          max-width-chars: 6;
-                          hexpand: false;
-                        }
-                      }
-                      Adw.Bin {
+
                         Box {
-                          DropDown resize_type {
-                            valign: center;
-                            accessibility {
-                              label: _("Choose between resizing with percentages or using exact pixels");
-                            }
-                            model:
-                            StringList resize_types {
-                              strings [_("%"),_("px")]
-                            }
-                            ;
-                            styles ["flat", "unit-drop"]
+                          spacing: 8;
+                          homogeneous: true;
+
+                          Button remove_segment_button {
+                            label: _("Remove");
+                            tooltip-text: _("Remove Current Section");
+                            sensitive: false;
+                          }
+
+                          Button add_segment_button {
+                            label: _("Add Section");
+                            tooltip-text: _("Add Section at Playhead");
+                            styles ["suggested-action"]
                           }
                         }
                       }
                     }
-                    Adw.SpinRow framerate_row {
-                      title: _("Framerate");
-                      adjustment: Adjustment {
-                        lower: 1;
-                        step-increment: 1;
-                        upper: 480;
+                  }
+                  ;
+                }
+
+                Adw.ViewStackPage {
+                  name: "video";
+                  title: _("Video");
+                  icon-name: "image-x-generic-symbolic";
+                  child:
+                  ScrolledWindow {
+                    hscrollbar-policy: never;
+                    vscrollbar-policy: automatic;
+
+                    Adw.Clamp {
+                      maximum-size: 400;
+                      margin-start: 12;
+                      margin-end: 12;
+                      margin-top: 12;
+                      margin-bottom: 12;
+
+                      Box {
+                        orientation: vertical;
+                        spacing: 24;
+
+                        ListBox {
+                          selection-mode: none;
+                          styles ["boxed-list"]
+
+                          Adw.ActionRow resize_amount_row {
+                            title: _("Resize");
+                            Box {
+                              spacing: 5;
+                              Entry resize_width_value {
+                                valign: center;
+                                placeholder-text: _("Width");
+                                tooltip-text: _("Width");
+                                input-purpose: digits;
+                                max-width-chars: 6;
+                                visible: false;
+                                hexpand: false;
+                              }
+                              Entry resize_scale_width_value {
+                                valign: center;
+                                placeholder-text: _("Width");
+                                input-purpose: digits;
+                                tooltip-text: _("Width");
+                                max-width-chars: 6;
+                                hexpand: false;
+                              }
+                              Image link_axis {
+                                valign: center;
+                                icon-name: 'chain-link-symbolic';
+                                tooltip-text: _("Preserve aspect ratio");
+                                styles ['lock']
+                              }
+                              Entry resize_height_value {
+                                valign: center;
+                                placeholder-text: _("Height");
+                                tooltip-text: _("Height");
+                                input-purpose: digits;
+                                max-width-chars: 6;
+                                visible: false;
+                                hexpand: false;
+                              }
+                              Entry resize_scale_height_value {
+                                valign: center;
+                                placeholder-text: _("Height");
+                                input-purpose: digits;
+                                tooltip-text: _("Height");
+                                max-width-chars: 6;
+                                hexpand: false;
+                              }
+                            }
+                            Adw.Bin {
+                              Box {
+                                DropDown resize_type {
+                                  valign: center;
+                                  accessibility {
+                                    label: _("Choose between resizing with percentages or using exact pixels");
+                                  }
+                                  model:
+                                  StringList resize_types {
+                                    strings [_("%"),_("px")]
+                                  }
+                                  ;
+                                  styles ["flat", "unit-drop"]
+                                }
+                              }
+                            }
+                          }
+
+                          Adw.SwitchRow enhance_quality_row {
+                            title: _("Improve Quality");
+                            subtitle: _("Export at 2× with high-quality upscaling");
+                          }
+
+                          Adw.SpinRow framerate_row {
+                            title: _("Framerate");
+                            adjustment: Adjustment {
+                              lower: 1;
+                              step-increment: 1;
+                              upper: 480;
+                            }
+                            ;
+                            value: 30;
+                          }
+                        }
+
+                        ListBox {
+                          selection-mode: none;
+                          styles ["boxed-list"]
+
+                          Adw.ExpanderRow adjustments_row {
+                            title: _("Image Adjustments");
+                            subtitle: _("Brightness, contrast, colour, sharpness");
+
+                            Adw.ActionRow {
+                              title: _("Brightness");
+                              Scale adjust_brightness {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 2;
+                                adjustment: Adjustment {
+                                  lower: -1;
+                                  upper: 1;
+                                  step-increment: 0.01;
+                                  page-increment: 0.1;
+                                  value: 0;
+                                };
+                              }
+                            }
+
+                            Adw.ActionRow {
+                              title: _("Contrast");
+                              Scale adjust_contrast {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 2;
+                                adjustment: Adjustment {
+                                  lower: 0;
+                                  upper: 2;
+                                  step-increment: 0.01;
+                                  page-increment: 0.1;
+                                  value: 1;
+                                };
+                              }
+                            }
+
+                            Adw.ActionRow {
+                              title: _("Saturation");
+                              Scale adjust_saturation {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 2;
+                                adjustment: Adjustment {
+                                  lower: 0;
+                                  upper: 2;
+                                  step-increment: 0.01;
+                                  page-increment: 0.1;
+                                  value: 1;
+                                };
+                              }
+                            }
+
+                            Adw.ActionRow {
+                              title: _("Hue");
+                              Scale adjust_hue {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 0;
+                                adjustment: Adjustment {
+                                  lower: -180;
+                                  upper: 180;
+                                  step-increment: 1;
+                                  page-increment: 15;
+                                  value: 0;
+                                };
+                              }
+                            }
+
+                            Adw.ActionRow {
+                              title: _("Gamma");
+                              Scale adjust_gamma {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 2;
+                                adjustment: Adjustment {
+                                  lower: 0.1;
+                                  upper: 4;
+                                  step-increment: 0.01;
+                                  page-increment: 0.1;
+                                  value: 1;
+                                };
+                              }
+                            }
+
+                            Adw.ActionRow {
+                              title: _("Sharpness");
+                              Scale adjust_sharpness {
+                                valign: center;
+                                hexpand: true;
+                                width-request: 150;
+                                draw-value: true;
+                                value-pos: right;
+                                digits: 2;
+                                adjustment: Adjustment {
+                                  lower: 0;
+                                  upper: 1;
+                                  step-increment: 0.01;
+                                  page-increment: 0.1;
+                                  value: 0;
+                                };
+                              }
+                            }
+
+                            Adw.ButtonRow adjustments_reset {
+                              title: _("Reset Adjustments");
+                            }
+                          }
+
+                          Adw.ComboRow repeat_row {
+                            title: _("Repeat");
+                            model: StringList {};
+                            styles ["property"]
+                          }
+
+                          Adw.ComboRow speed_row {
+                            title: _("Speed");
+                            subtitle: _("Change video and audio speed");
+                            model: StringList {};
+                            styles ["property"]
+                          }
+
+                          Adw.SpinRow repeat_count_row {
+                            title: _("Cycles");
+                            visible: false;
+                            adjustment: Adjustment {
+                              lower: 1;
+                              upper: 50;
+                              step-increment: 1;
+                              value: 2;
+                            };
+                            value: 2;
+                          }
+                        }
                       }
-
-                      ;
-                      value: 30;
                     }
                   }
+                  ;
+                }
 
-                  ListBox {
-                    selection-mode: none;
-                    styles ["boxed-list"]
+                Adw.ViewStackPage {
+                  name: "export";
+                  title: _("Export");
+                  icon-name: "document-save-symbolic";
+                  child:
+                  ScrolledWindow {
+                    hscrollbar-policy: never;
+                    vscrollbar-policy: automatic;
 
-                    Adw.ComboRow container_row {
-                      title: _("Container Format");
-                      use-subtitle: true;
-                      model: StringList {};
-                      styles ["property"]
-                    }
-                    Adw.ComboRow video_encoding {
-                      title: _("Video Encoding");
-                      use-subtitle: true;
-                      model: StringList {};
-                      styles ["property"]
-                    }
-                    Adw.ComboRow audio_encoding {
-                      title: _("Audio Encoding");
-                      use-subtitle: true;
-                      model: StringList {};
-                      styles ["property"]
-                    }
-                    Adw.ComboRow quality_row {
-                      title: _("Quality");
-                      use-subtitle: true;
-                      model:
-                      StringList quality_list {
-                        strings [_("Low"), _("Medium"), _("High"), _("Unchanged")]
+                    Adw.Clamp {
+                      maximum-size: 400;
+                      margin-start: 12;
+                      margin-end: 12;
+                      margin-top: 12;
+                      margin-bottom: 12;
+
+                      Box {
+                        orientation: vertical;
+                        spacing: 24;
+
+                        ListBox {
+                          selection-mode: none;
+                          styles ["boxed-list"]
+
+                          Adw.ComboRow segment_export_mode {
+                            title: _("Multiple Sections");
+                            subtitle: _("Export order follows the section list");
+                            visible: false;
+                            model: StringList {};
+                            styles ["property"]
+                          }
+
+                          Adw.ComboRow container_row {
+                            title: _("Container Format");
+                            use-subtitle: true;
+                            model: StringList {};
+                            styles ["property"]
+                          }
+                          Adw.ComboRow video_encoding {
+                            title: _("Video Encoding");
+                            use-subtitle: true;
+                            model: StringList {};
+                            styles ["property"]
+                          }
+                          Adw.ComboRow audio_encoding {
+                            title: _("Audio Encoding");
+                            use-subtitle: true;
+                            model: StringList {};
+                            styles ["property"]
+                          }
+                          Adw.ComboRow quality_row {
+                            title: _("Quality");
+                            use-subtitle: true;
+                            model:
+                            StringList quality_list {
+                              strings [_("Low"), _("Medium"), _("High"), _("Unchanged")]
+                            }
+                            ;
+                            selected: 2;
+                            styles ["property"]
+                          }
+                          Adw.SwitchRow gpu_row {
+                            title: _("Hardware Acceleration");
+                            subtitle: _("Use the GPU (NVENC) when the codec supports it");
+                            active: true;
+                          }
+                          Adw.ActionRow encoder_status_row {
+                            title: _("Encoder");
+                            subtitle: _("…");
+                            styles ["property"]
+
+                            [prefix]
+                            Image encoder_status_icon {
+                              icon-name: "power-profile-performance-symbolic";
+                            }
+                          }
+                        }
+
+                        Button save_button {
+                          halign: center;
+                          label: _("Save Video");
+                          styles ["suggested-action", "pill"]
+                        }
                       }
-                      ;
-                      selected: 2;
-                      styles ["property"]
                     }
                   }
-
-                  Box {
-                    halign: center;
-                    margin-top: 12;
-                    Button save_button {
-                      label: _("Save Video");
-                      styles ["suggested-action", "pill"]
-                    }
-                  }
+                  ;
                 }
               }
             }
@@ -474,8 +750,8 @@ template $AppWindow : Adw.ApplicationWindow {
       settings_sidebar_revealer.reveal-child: true;
       settings_sidebar.width-request: 0;
       settings_sidebar.hexpand: true;
-      settings_sidebar.propagate-natural-height: true;
-      settings_sidebar.max-content-height: 300;
+      settings_sidebar.height-request: 300;
+      settings_sidebar.vexpand: false;
     }
   }
 }
