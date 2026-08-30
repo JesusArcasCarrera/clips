@@ -18,7 +18,18 @@ under the name Footage provide the upstream application, not this fork.
 
 ## About
 
-Trim, flip, rotate and crop individual clips. Clips is a useful tool for quickly editing short videos and screencasts. It's also capable of exporting any video into a format of your choice. See [Press](PRESS.md) for coverage of the upstream project.
+Clips is a focused editor for short videos and screencasts. It can:
+
+- trim and export one or several sections;
+- crop, rotate, flip, and resize video;
+- adjust brightness, contrast, saturation, hue, gamma, and sharpness;
+- create slow-motion, repeated, and boomerang playback;
+- choose the container, video and audio codecs, frame rate, and output quality;
+- use a supported hardware encoder and fall back to software automatically.
+
+After rendering, the result can be opened, shown in its containing folder, or
+sent back to the editor with the current settings intact. See [Press](PRESS.md)
+for coverage of the upstream project.
 
 <img src="data/resources/screenshots/0.png" alt="Main screen with a chosen ISO and one USB memory">
 
@@ -66,7 +77,9 @@ To build and install into `~/.local` so the launcher shows it as *Clips*:
 
 ```
 meson setup _build --prefix="$HOME/.local"
-ninja -C _build install
+meson compile -C _build
+cargo test
+meson install -C _build
 ```
 
 The desktop file is installed at
