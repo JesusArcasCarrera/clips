@@ -226,17 +226,6 @@ pub enum Quality {
 }
 
 impl Quality {
-    /// Compatibility for the original GES export path. The FFmpeg renderer
-    /// introduced in the following commit uses `target_kbps` instead.
-    pub fn bitrate_kbps(&self) -> Option<u32> {
-        match self {
-            Quality::Low => Some(2000),
-            Quality::Medium => Some(5000),
-            Quality::High => Some(15000),
-            Quality::Unchanged => None,
-        }
-    }
-
     /// Bits-per-pixel-per-frame budget for this quality level. The actual target
     /// bitrate scales with the output resolution and framerate, so a small crop gets
     /// a small file and a full-resolution export gets a large one — instead of a

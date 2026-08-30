@@ -449,6 +449,14 @@ mod imp {
             self.refresh();
         }
 
+        pub fn duration(&self) -> u64 {
+            self.duration.get()
+        }
+
+        pub fn position(&self) -> u64 {
+            self.position.get()
+        }
+
         pub fn set_position(&self, position: u64) {
             let (start, end) = self.range.get().unwrap();
             let position = position.clamp(start, end);
@@ -505,6 +513,14 @@ impl Timeline {
 
     pub fn set_duration(&self, duration: u64) {
         self.imp().set_duration(duration);
+    }
+
+    pub fn duration(&self) -> u64 {
+        self.imp().duration()
+    }
+
+    pub fn position(&self) -> u64 {
+        self.imp().position()
     }
 
     pub fn set_position(&self, position: u64) {

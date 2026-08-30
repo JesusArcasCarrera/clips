@@ -1,7 +1,12 @@
 use std::{
     cell::RefCell,
-    path::PathBuf,
-    sync::{atomic::AtomicBool, Arc},
+    io::{BufRead, BufReader, Write},
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, OnceLock,
+    },
 };
 
 use glib::clone;
@@ -13,9 +18,11 @@ use ges::prelude::*;
 use ges::Effect;
 
 use crate::{
+    adjustments::{ColorAdjustments, PlaybackSpeed, Repeat},
     info::{get_info, Dimensions, Framerate},
     orientation::VideoOrientation,
-    profiles::{ContainerFormat, OutputFormat, VideoEncoding},
+    profiles::{ContainerFormat, OutputFormat, Quality, VideoEncoding},
+    segments::{ClipRange, SegmentExportMode},
 };
 
 mod imp {
@@ -42,6 +49,13 @@ mod imp {
         pub current_dimensions: Cell<Option<Dimensions<u32>>>,
         pub orientation: Cell<VideoOrientation>,
         pub audio_level: RefCell<Option<Effect>>,
+        /// Live colour correction, mirrored by the `videobalance`/`gamma` effects
+        /// below and baked into the export.
+        pub adjustments: Cell<ColorAdjustments>,
+        pub balance: RefCell<Option<Effect>>,
+        pub gamma: RefCell<Option<Effect>>,
+        pub sharpness: RefCell<Option<Effect>>,
+        pub playback_rate: Cell<f64>,
         pub inpoint: Cell<u64>,
         pub mute: Cell<bool>,
         pub outpoint: Cell<u64>,
@@ -127,6 +141,11 @@ impl VideoPreview {
         self.imp().crop_box.reset();
         self.imp().orientation.set(VideoOrientation::Identity);
         self.imp().audio_level.replace(None);
+        self.imp().adjustments.set(ColorAdjustments::NEUTRAL);
+        self.imp().balance.replace(None);
+        self.imp().gamma.replace(None);
+        self.imp().sharpness.replace(None);
+        self.imp().playback_rate.set(1.0);
         self.imp().effects.replace(vec![]);
         self.imp().current_dimensions.set(None);
         {
@@ -182,6 +201,12 @@ impl VideoPreview {
 
         self.imp().crop_box.set_proportions((0., 0., 0., 0.));
         self.imp().audio_level.replace(None);
+        // The colour effects belonged to the previous clip; they get re-created
+        // lazily on the new one the first time an adjustment is made.
+        self.imp().adjustments.set(ColorAdjustments::NEUTRAL);
+        self.imp().balance.replace(None);
+        self.imp().gamma.replace(None);
+        self.imp().sharpness.replace(None);
         self.imp().orientation.set(Default::default());
         self.emit_by_name::<()>("mode-changed", &[&false]);
 
@@ -208,12 +233,50 @@ impl VideoPreview {
         }
 
         let position = position.max(self.imp().inpoint.get()) - self.imp().inpoint.get();
+        self.seek_timeline_position(position);
+    }
 
-        let op = self.imp().pipeline.borrow();
+    fn playback_rate(&self) -> f64 {
+        let rate = self.imp().playback_rate.get();
+        if rate > 0.0 {
+            rate
+        } else {
+            1.0
+        }
+    }
 
-        if let Some(p) = op.as_ref() {
-            p.seek_simple(SeekFlags::empty(), ClockTime::from_mseconds(position))
-                .ok();
+    fn seek_timeline_position(&self, position_ms: u64) {
+        if let Some(pipeline) = self.imp().pipeline.borrow().as_ref() {
+            if let Err(err) = pipeline.seek(
+                self.playback_rate(),
+                SeekFlags::FLUSH | SeekFlags::ACCURATE,
+                gst::SeekType::Set,
+                ClockTime::from_mseconds(position_ms),
+                gst::SeekType::None,
+                ClockTime::NONE,
+            ) {
+                log::warn!("could not apply preview playback rate: {err}");
+            }
+        }
+    }
+
+    /// Changes preview speed while keeping the current source position.
+    pub fn set_playback_rate(&self, rate: f64) {
+        let rate = rate.clamp(0.25, 1.0);
+        if (rate - self.playback_rate()).abs() < 0.0005 {
+            return;
+        }
+
+        let position = self
+            .imp()
+            .pipeline
+            .borrow()
+            .as_ref()
+            .and_then(|pipeline| pipeline.query_position::<ClockTime>())
+            .map(ClockTime::mseconds);
+        self.imp().playback_rate.set(rate);
+        if let Some(position) = position {
+            self.seek_timeline_position(position);
         }
     }
 
@@ -314,6 +377,7 @@ impl VideoPreview {
 
         self.imp().pipeline.replace(Some(pipeline));
         self.imp().bus_watch.replace(Some(bus_watch));
+        self.seek_timeline_position(0);
 
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -473,6 +537,75 @@ impl VideoPreview {
             .set_proportions(self.imp().crop_box.vertical_flip_proportions());
     }
 
+    /// Applies colour correction to the live preview. The `videobalance`/`gamma`
+    /// effects are attached to the clip on first use and then only have their
+    /// properties updated, so dragging a slider does not rebuild the pipeline.
+    pub fn set_color_adjustments(&self, adjustments: ColorAdjustments) {
+        self.imp().adjustments.set(adjustments);
+
+        // Nothing to drive yet, or nothing to do: don't pay for the effects while
+        // every knob is still neutral.
+        if self.imp().clip.borrow().is_none() || self.imp().pipeline.borrow().is_none() {
+            return;
+        }
+        if adjustments.is_neutral() && self.imp().balance.borrow().is_none() {
+            return;
+        }
+
+        self.ensure_adjustment_effects();
+
+        if let Some(balance) = self.imp().balance.borrow().as_ref() {
+            set_child_property_f64(balance, "brightness", adjustments.brightness);
+            set_child_property_f64(balance, "contrast", adjustments.contrast);
+            set_child_property_f64(balance, "saturation", adjustments.saturation);
+            set_child_property_f64(balance, "hue", adjustments.gst_hue());
+        }
+        if let Some(gamma) = self.imp().gamma.borrow().as_ref() {
+            set_child_property_f64(gamma, "gamma", adjustments.gamma);
+        }
+        if let Some(sharpness) = self.imp().sharpness.borrow().as_ref() {
+            set_child_property_f64(sharpness, "sigma", adjustments.gst_sharpen_sigma());
+        }
+
+        self.commit();
+    }
+
+    /// The colour correction currently shown in the preview.
+    pub fn color_adjustments(&self) -> ColorAdjustments {
+        self.imp().adjustments.get()
+    }
+
+    fn ensure_adjustment_effects(&self) {
+        if self.imp().balance.borrow().is_some() {
+            return;
+        }
+
+        let Ok(balance) = ges::Effect::new("videobalance") else {
+            log::warn!("videobalance is unavailable; colour adjustments will not preview");
+            return;
+        };
+        let Ok(gamma) = ges::Effect::new("gamma") else {
+            log::warn!("gamma is unavailable; colour adjustments will not preview");
+            return;
+        };
+        let sharpness = ges::Effect::new("gaussianblur sigma=0").ok();
+        if sharpness.is_none() {
+            log::warn!("gaussianblur is unavailable; sharpness will not preview");
+        }
+
+        if let Some(clip) = self.imp().clip.borrow().as_ref() {
+            clip.add_top_effect(&balance, 0).ok();
+            clip.add_top_effect(&gamma, 0).ok();
+            if let Some(sharpness) = sharpness.as_ref() {
+                clip.add_top_effect(sharpness, 0).ok();
+            }
+        }
+
+        self.imp().balance.replace(Some(balance));
+        self.imp().gamma.replace(Some(gamma));
+        self.imp().sharpness.replace(sharpness);
+    }
+
     pub fn mute(&self) {
         self.imp().mute.set(true);
 
@@ -507,6 +640,7 @@ impl VideoPreview {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn save(
         &self,
         output_path: PathBuf,
@@ -514,11 +648,18 @@ impl VideoPreview {
         output_format: OutputFormat,
         framerate: Framerate,
         scaled_dimension: Dimensions<u32>,
+        prefer_gpu: bool,
+        repeat: Repeat,
+        speed: PlaybackSpeed,
+        segments: Vec<ClipRange>,
+        segment_export_mode: SegmentExportMode,
         running_flag: Arc<AtomicBool>,
     ) {
         self.kill();
 
-        dbg!(&output_format, &framerate, &scaled_dimension);
+        dbg!(&output_format, &framerate, &scaled_dimension, prefer_gpu);
+
+        let adjustments = self.imp().adjustments.get();
 
         let input_path = self.imp().path.borrow().to_owned();
         let orientation = self.imp().orientation.get();
@@ -544,6 +685,104 @@ impl VideoPreview {
         let inpoint = self.imp().clip.borrow().as_ref().unwrap().inpoint();
         let duration = self.imp().clip.borrow().as_ref().unwrap().duration();
 
+        // Fast path: render with ffmpeg (NVENC + libplacebo). GES stays as fallback
+        // for the cases ffmpeg doesn't cover here (GIF, "keep as-is").
+        if Self::ffmpeg_can_handle(&output_format) {
+            if segments.len() > 1 {
+                Self::save_ffmpeg_segments(
+                    input_path,
+                    output_path,
+                    output_format,
+                    framerate,
+                    dimensions,
+                    (top, right, bottom, left),
+                    scaled_dimension,
+                    orientation,
+                    mute,
+                    prefer_gpu,
+                    adjustments,
+                    speed,
+                    segments,
+                    segment_export_mode,
+                    sender,
+                    running_flag,
+                );
+                return;
+            }
+
+            let range = segments.first().copied().unwrap_or_else(|| {
+                ClipRange::new(inpoint.mseconds(), inpoint.mseconds() + duration.mseconds())
+            });
+            Self::save_ffmpeg(
+                input_path,
+                output_path,
+                output_format,
+                framerate,
+                dimensions,
+                (top, right, bottom, left),
+                scaled_dimension,
+                orientation,
+                mute,
+                range.start_ms * 1_000_000,
+                range.duration_ms() * 1_000_000,
+                prefer_gpu,
+                adjustments,
+                repeat,
+                speed,
+                sender,
+                running_flag,
+            );
+            return;
+        }
+
+        if !repeat.is_off() {
+            log::warn!(
+                "loop/boomerang is only supported by the ffmpeg render path; \
+                 exporting the selection once"
+            );
+        }
+
+        Self::save_ges(
+            input_path,
+            output_path,
+            output_format,
+            framerate,
+            scaled_dimension,
+            full_scaled_width,
+            full_scaled_height,
+            top,
+            left,
+            orientation,
+            mute,
+            inpoint,
+            duration,
+            prefer_gpu,
+            adjustments,
+            sender,
+            running_flag,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn save_ges(
+        input_path: PathBuf,
+        output_path: PathBuf,
+        output_format: OutputFormat,
+        framerate: Framerate,
+        scaled_dimension: Dimensions<u32>,
+        full_scaled_width: f64,
+        full_scaled_height: f64,
+        top: f64,
+        left: f64,
+        orientation: VideoOrientation,
+        mute: bool,
+        inpoint: ClockTime,
+        duration: ClockTime,
+        prefer_gpu: bool,
+        adjustments: ColorAdjustments,
+        sender: async_channel::Sender<Result<(u64, u64), ()>>,
+        running_flag: Arc<AtomicBool>,
+    ) {
         std::thread::spawn(move || {
             let clip = ges::UriClip::new(
                 url::Url::from_file_path(input_path.clone())
@@ -627,6 +866,30 @@ impl VideoPreview {
             clip.add_top_effect(&ges::Effect::new("videorate").unwrap(), 0)
                 .ok();
 
+            if !adjustments.is_neutral() {
+                if let Ok(balance) = ges::Effect::new("videobalance") {
+                    set_child_property_f64(&balance, "brightness", adjustments.brightness);
+                    set_child_property_f64(&balance, "contrast", adjustments.contrast);
+                    set_child_property_f64(&balance, "saturation", adjustments.saturation);
+                    set_child_property_f64(&balance, "hue", adjustments.gst_hue());
+                    clip.add_top_effect(&balance, 0).ok();
+                }
+                if let Ok(gamma) = ges::Effect::new("gamma") {
+                    set_child_property_f64(&gamma, "gamma", adjustments.gamma);
+                    clip.add_top_effect(&gamma, 0).ok();
+                }
+                if adjustments.sharpness >= 0.0005 {
+                    if let Ok(sharpness) = ges::Effect::new("gaussianblur sigma=0") {
+                        set_child_property_f64(
+                            &sharpness,
+                            "sigma",
+                            adjustments.gst_sharpen_sigma(),
+                        );
+                        clip.add_top_effect(&sharpness, 0).ok();
+                    }
+                }
+            }
+
             clip.set_inpoint(inpoint);
             clip.set_duration(Some(duration));
 
@@ -705,25 +968,43 @@ impl VideoPreview {
                     .unwrap();
             } else {
                 let video_encoding = output_format.video_encoding.unwrap();
-                let video_caps =
-                    gst::Caps::builder(video_encoding.get_format()).build();
+                let encoder = video_encoding.resolve_encoder(prefer_gpu);
+                log::info!(
+                    "Export encoder: {} [{}]",
+                    encoder.element,
+                    if encoder.hardware {
+                        "GPU/NVENC"
+                    } else {
+                        "CPU/software"
+                    }
+                );
+                let video_caps = gst::Caps::builder(video_encoding.get_format()).build();
 
                 let video_profile_builder =
                     gstreamer_pbutils::EncodingVideoProfile::builder(&video_caps)
-                        .preset_name(video_encoding.get_preset_name());
+                        .preset_name(encoder.element);
 
-                let video_profile = if let Some(bitrate_kbps) = output_format.quality.bitrate_kbps() {
-                    let (prop_name, multiplier) = video_encoding.bitrate_property();
-                    let encoder_name = video_encoding.get_preset_name();
-                    let bitrate_value = bitrate_kbps as i32 * multiplier as i32;
-                    let props = ElementProperties::builder_map()
-                        .item(
-                            ElementPropertiesMapItem::builder(encoder_name)
-                                .field(prop_name, bitrate_value)
-                                .build(),
-                        )
-                        .build();
-                    video_profile_builder.element_properties(props).build()
+                let fps = framerate.nominator as f64 / (framerate.denominator.max(1) as f64);
+                let target_kbps = output_format.quality.target_kbps(
+                    scaled_dimension.width,
+                    scaled_dimension.height,
+                    fps,
+                );
+                let video_profile = if let Some(bitrate_kbps) = target_kbps {
+                    let (prop_name, multiplier) = encoder.bitrate_property;
+                    if prop_name.is_empty() {
+                        video_profile_builder.build()
+                    } else {
+                        let bitrate_value = bitrate_kbps as i32 * multiplier as i32;
+                        let props = ElementProperties::builder_map()
+                            .item(
+                                ElementPropertiesMapItem::builder(encoder.element)
+                                    .field(prop_name, bitrate_value)
+                                    .build(),
+                            )
+                            .build();
+                        video_profile_builder.element_properties(props).build()
+                    }
                 } else {
                     video_profile_builder.build()
                 };
@@ -822,5 +1103,810 @@ impl VideoPreview {
 
             pipeline.set_state(gst::State::Null).unwrap();
         });
+    }
+
+    /// Whether the ffmpeg render path can handle this format. GIF and "keep as-is"
+    /// fall back to the GES path.
+    fn ffmpeg_can_handle(output_format: &OutputFormat) -> bool {
+        !matches!(
+            output_format.container_format,
+            ContainerFormat::Same | ContainerFormat::GifContainer
+        ) && !matches!(
+            output_format.video_encoding,
+            Some(VideoEncoding::Gif) | None
+        )
+    }
+
+    /// Renders each source range serially. Joined exports concatenate the encoded
+    /// parts by stream copy; separate exports write one safely named file per range.
+    #[allow(clippy::too_many_arguments)]
+    fn save_ffmpeg_segments(
+        input_path: PathBuf,
+        output_target: PathBuf,
+        output_format: OutputFormat,
+        framerate: Framerate,
+        oriented: Dimensions<f64>,
+        crop: (f64, f64, f64, f64),
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        mute: bool,
+        prefer_gpu: bool,
+        adjustments: ColorAdjustments,
+        speed: PlaybackSpeed,
+        segments: Vec<ClipRange>,
+        export_mode: SegmentExportMode,
+        sender: async_channel::Sender<Result<(u64, u64), ()>>,
+        running_flag: Arc<AtomicBool>,
+    ) {
+        std::thread::spawn(move || {
+            let segments = segments
+                .into_iter()
+                .filter(|range| range.duration_ms() > 0)
+                .collect::<Vec<_>>();
+            if segments.is_empty() {
+                let _ = sender.send_blocking(Err(()));
+                return;
+            }
+
+            let filters = ffmpeg_filter_chain(
+                oriented,
+                crop,
+                scaled,
+                orientation,
+                adjustments,
+                speed,
+                framerate,
+            );
+            let video_encoding = output_format.video_encoding.unwrap();
+            let (software, hardware) = video_encoding.ffmpeg_encoders();
+            let encoder = if prefer_gpu {
+                hardware
+                    .filter(|name| ffmpeg_has_encoder(name))
+                    .unwrap_or(software)
+            } else {
+                software
+            };
+            let quality_args = ffmpeg_quality_args(encoder, output_format.quality);
+            let audio_codec = if mute {
+                None
+            } else {
+                output_format
+                    .audio_encoding
+                    .map(|audio| audio.ffmpeg_codec())
+            };
+            let ext = output_format.container_format.extension().to_owned();
+            let source_ms = speed.output_duration_ms(
+                segments
+                    .iter()
+                    .map(|range| range.duration_ms())
+                    .sum::<u64>(),
+            );
+            let concat_ms = if export_mode == SegmentExportMode::Join {
+                source_ms / 10 + 1
+            } else {
+                0
+            };
+            let total_ms = source_ms + concat_ms;
+            let mut done_ms = 0;
+            let mut temps = TempFiles::default();
+            let mut rendered_parts = Vec::with_capacity(segments.len());
+
+            log::info!(
+                "exporting {} sections as {:?} with {}",
+                segments.len(),
+                export_mode,
+                encoder
+            );
+
+            for (index, range) in segments.iter().enumerate() {
+                let part_path = match export_mode {
+                    SegmentExportMode::Join => {
+                        temps.reserve(&output_target, &format!("section-{index}"), &ext)
+                    }
+                    SegmentExportMode::Separate => {
+                        unique_segment_path(&output_target, &input_path, index, &ext)
+                    }
+                };
+
+                let mut cmd = ffmpeg_base();
+                cmd.args([
+                    "-ss",
+                    &format!("{:.3}", range.start_ms as f64 / 1000.0),
+                    "-t",
+                    &format!("{:.3}", range.duration_ms() as f64 / 1000.0),
+                ]);
+                cmd.arg("-i").arg(&input_path);
+                cmd.args(["-vf", &filters.join(",")]);
+                cmd.arg("-c:v").arg(encoder);
+                cmd.args(&quality_args);
+                match audio_codec {
+                    Some(codec) => {
+                        if let Some(filter) = speed.ffmpeg_audio_filter() {
+                            cmd.args(["-af", filter]);
+                        }
+                        cmd.arg("-c:a").arg(codec);
+                    }
+                    None => {
+                        cmd.arg("-an");
+                    }
+                }
+                cmd.arg(&part_path);
+
+                let span = speed.output_duration_ms(range.duration_ms());
+                if run_ffmpeg_stage(
+                    &mut cmd,
+                    span,
+                    done_ms,
+                    span,
+                    total_ms,
+                    &sender,
+                    &running_flag,
+                ) != StageOutcome::Done
+                {
+                    let _ = sender.send_blocking(Err(()));
+                    return;
+                }
+                done_ms += span;
+                rendered_parts.push(part_path);
+            }
+
+            if export_mode == SegmentExportMode::Separate {
+                let _ = sender.send_blocking(Ok((total_ms, total_ms)));
+                return;
+            }
+
+            let list_path = temps.reserve(&output_target, "sections", "txt");
+            let list = rendered_parts
+                .iter()
+                .map(|part| concat_entry(part))
+                .collect::<String>();
+            if let Err(err) = std::fs::File::create(&list_path)
+                .and_then(|mut file| file.write_all(list.as_bytes()))
+            {
+                log::error!("could not write the section list: {err}");
+                let _ = sender.send_blocking(Err(()));
+                return;
+            }
+
+            let mut cmd = ffmpeg_base();
+            cmd.args(["-f", "concat", "-safe", "0"]);
+            cmd.arg("-i").arg(&list_path);
+            cmd.args(["-c", "copy"]);
+            cmd.arg(&output_target);
+            let mut outcome = run_ffmpeg_stage(
+                &mut cmd,
+                source_ms,
+                done_ms,
+                concat_ms,
+                total_ms,
+                &sender,
+                &running_flag,
+            );
+
+            if outcome == StageOutcome::Failed {
+                log::warn!("section stream-copy concat failed; re-encoding the joined result");
+                let mut cmd = ffmpeg_base();
+                cmd.args(["-f", "concat", "-safe", "0"]);
+                cmd.arg("-i").arg(&list_path);
+                cmd.arg("-c:v").arg(encoder);
+                cmd.args(&quality_args);
+                match audio_codec {
+                    Some(codec) => {
+                        cmd.arg("-c:a").arg(codec);
+                    }
+                    None => {
+                        cmd.arg("-an");
+                    }
+                }
+                cmd.arg(&output_target);
+                outcome = run_ffmpeg_stage(
+                    &mut cmd,
+                    source_ms,
+                    done_ms,
+                    concat_ms,
+                    total_ms,
+                    &sender,
+                    &running_flag,
+                );
+            }
+
+            let _ = sender.send_blocking(if outcome == StageOutcome::Done {
+                Ok((total_ms, total_ms))
+            } else {
+                Err(())
+            });
+        });
+    }
+
+    /// Render via ffmpeg subprocesses: trim -> orient -> crop -> colour -> scale
+    /// (libplacebo) -> fps -> NVENC/software encode. Loop and boomerang add a reversed
+    /// pass and a stream-copy concat on top. Reports progress and supports cancellation
+    /// through the same channel/flag protocol as the GES path.
+    #[allow(clippy::too_many_arguments)]
+    fn save_ffmpeg(
+        input_path: PathBuf,
+        output_path: PathBuf,
+        output_format: OutputFormat,
+        framerate: Framerate,
+        oriented: Dimensions<f64>,
+        crop: (f64, f64, f64, f64),
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        mute: bool,
+        inpoint_ns: u64,
+        duration_ns: u64,
+        prefer_gpu: bool,
+        adjustments: ColorAdjustments,
+        repeat: Repeat,
+        speed: PlaybackSpeed,
+        sender: async_channel::Sender<Result<(u64, u64), ()>>,
+        running_flag: Arc<AtomicBool>,
+    ) {
+        std::thread::spawn(move || {
+            let (top, right, bottom, left) = crop;
+
+            // Filter chain: orient -> crop (in oriented space) -> colour -> scale -> fps.
+            let mut filters: Vec<String> = orientation
+                .ffmpeg_filters()
+                .iter()
+                .map(|f| f.to_string())
+                .collect();
+
+            let src_w = oriented.width;
+            let src_h = oriented.height;
+            let crop_w = (((1.0 - left - right) * src_w).round() as i64 / 2 * 2).max(2);
+            let crop_h = (((1.0 - top - bottom) * src_h).round() as i64 / 2 * 2).max(2);
+            let crop_x = ((left * src_w).round() as i64).max(0);
+            let crop_y = ((top * src_h).round() as i64).max(0);
+            let cropping = (left + right + top + bottom) > 0.001;
+            if cropping {
+                filters.push(format!("crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"));
+            }
+
+            // Colour correction sits after the crop and before the (GPU) rescale, so
+            // the CPU-bound `eq`/`hue` filters touch as few pixels as possible.
+            filters.extend(adjustments.ffmpeg_filters());
+
+            let out_w = scaled.width as i64;
+            let out_h = scaled.height as i64;
+            let cur_w = if cropping {
+                crop_w
+            } else {
+                src_w.round() as i64
+            };
+            let cur_h = if cropping {
+                crop_h
+            } else {
+                src_h.round() as i64
+            };
+            if out_w != cur_w || out_h != cur_h {
+                // libplacebo ewa_lanczossharp: GPU up/downscale (the chosen "E" recipe).
+                filters.push(format!(
+                    "libplacebo=w={out_w}:h={out_h}:upscaler=ewa_lanczossharp"
+                ));
+            }
+
+            if !speed.is_normal() {
+                filters.push(format!("setpts=PTS/{:.4}", speed.factor()));
+            }
+
+            filters.push(format!(
+                "fps={}/{}",
+                framerate.nominator,
+                framerate.denominator.max(1)
+            ));
+
+            let video_encoding = output_format.video_encoding.unwrap();
+            let (sw, hw) = video_encoding.ffmpeg_encoders();
+            let encoder = if prefer_gpu {
+                hw.filter(|h| ffmpeg_has_encoder(h)).unwrap_or(sw)
+            } else {
+                sw
+            };
+            log::info!(
+                "ffmpeg export encoder: {} [{}]",
+                encoder,
+                if encoder.contains("nvenc") {
+                    "GPU/NVENC"
+                } else {
+                    "CPU/software"
+                }
+            );
+
+            let quality_args = ffmpeg_quality_args(encoder, output_format.quality);
+            let audio_codec = if mute {
+                None
+            } else {
+                output_format.audio_encoding.map(|a| a.ffmpeg_codec())
+            };
+
+            let ss = inpoint_ns as f64 / 1_000_000_000.0;
+            let t = duration_ns as f64 / 1_000_000_000.0;
+            let source_selection_ms = (duration_ns / 1_000_000).max(1);
+            let selection_ms = speed.output_duration_ms(source_selection_ms);
+            let fps = framerate.nominator as f64 / framerate.denominator.max(1) as f64;
+
+            // Stage weights, in milliseconds of material processed. The reversed pass
+            // re-encodes the whole selection again; the final concat is a stream copy,
+            // roughly an order of magnitude faster.
+            let reverse_weight = if repeat.is_boomerang() {
+                selection_ms
+            } else {
+                0
+            };
+            let concat_weight = if repeat.is_off() {
+                0
+            } else {
+                selection_ms / 10 + 1
+            };
+            let total_ms = selection_ms + reverse_weight + concat_weight;
+
+            let mut temps = TempFiles::default();
+            let ext = output_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_else(|| output_format.container_format.extension())
+                .to_owned();
+
+            // With nothing to concatenate afterwards, the first pass *is* the export.
+            let forward_path = if repeat.is_off() {
+                output_path.clone()
+            } else {
+                temps.reserve(&output_path, "fwd", &ext)
+            };
+
+            // Pass 1: source -> forward render at the target codec, size and framerate.
+            let mut cmd = ffmpeg_base();
+            cmd.args(["-ss", &format!("{ss}"), "-t", &format!("{t}")]);
+            cmd.arg("-i").arg(&input_path);
+            cmd.args(["-vf", &filters.join(",")]);
+            cmd.arg("-c:v").arg(encoder);
+            cmd.args(&quality_args);
+            match audio_codec {
+                Some(codec) => {
+                    if let Some(filter) = speed.ffmpeg_audio_filter() {
+                        cmd.args(["-af", filter]);
+                    }
+                    cmd.arg("-c:a").arg(codec);
+                }
+                None => {
+                    cmd.arg("-an");
+                }
+            }
+            cmd.arg(&forward_path);
+
+            if run_ffmpeg_stage(
+                &mut cmd,
+                selection_ms,
+                0,
+                selection_ms,
+                total_ms,
+                &sender,
+                &running_flag,
+            ) != StageOutcome::Done
+            {
+                let _ = sender.send_blocking(Err(()));
+                return;
+            }
+
+            if repeat.is_off() {
+                let _ = sender.send_blocking(Ok((total_ms, total_ms)));
+                return;
+            }
+
+            let mut done_ms = selection_ms;
+
+            // Pass 2 (boomerang only): reverse the forward render. ffmpeg's `reverse`
+            // buffers every frame of its input, so it runs over chunks sized to a memory
+            // budget, and the chunks are later listed back to front.
+            let mut reversed: Vec<PathBuf> = vec![];
+            if repeat.is_boomerang() {
+                let chunk_ms = reverse_chunk_ms(scaled, fps);
+                let chunks = selection_ms.div_ceil(chunk_ms).max(1);
+                log::info!(
+                    "boomerang: reversing {selection_ms} ms as {chunks} chunk(s) of up to {chunk_ms} ms"
+                );
+
+                for i in 0..chunks {
+                    let start_ms = i * chunk_ms;
+                    let len_ms = chunk_ms.min(selection_ms - start_ms);
+                    let path = temps.reserve(&output_path, &format!("rev{i}"), &ext);
+
+                    let mut cmd = ffmpeg_base();
+                    cmd.args([
+                        "-ss",
+                        &format!("{:.3}", start_ms as f64 / 1000.0),
+                        "-t",
+                        &format!("{:.3}", len_ms as f64 / 1000.0),
+                    ]);
+                    cmd.arg("-i").arg(&forward_path);
+                    cmd.args(["-vf", "reverse"]);
+                    cmd.arg("-c:v").arg(encoder);
+                    cmd.args(&quality_args);
+                    match audio_codec {
+                        Some(codec) => {
+                            cmd.args(["-af", "areverse"]);
+                            cmd.arg("-c:a").arg(codec);
+                        }
+                        None => {
+                            cmd.arg("-an");
+                        }
+                    }
+                    cmd.arg(&path);
+
+                    // Each chunk gets its share of the reversed pass's progress slice.
+                    let span = reverse_weight * len_ms / selection_ms;
+                    if run_ffmpeg_stage(
+                        &mut cmd,
+                        len_ms,
+                        done_ms,
+                        span,
+                        total_ms,
+                        &sender,
+                        &running_flag,
+                    ) != StageOutcome::Done
+                    {
+                        let _ = sender.send_blocking(Err(()));
+                        return;
+                    }
+
+                    done_ms += span;
+                    reversed.push(path);
+                }
+
+                // The last chunk of the forward render plays first when reversed.
+                reversed.reverse();
+            }
+
+            // Final pass: join one entry per cycle. Every part came out of the same
+            // encoder with the same settings, so this is a stream copy.
+            let list_path = temps.reserve(&output_path, "concat", "txt");
+            let mut list = String::new();
+            for _ in 0..repeat.cycles() {
+                list.push_str(&concat_entry(&forward_path));
+                for chunk in &reversed {
+                    list.push_str(&concat_entry(chunk));
+                }
+            }
+            if let Err(err) = std::fs::File::create(&list_path)
+                .and_then(|mut file| file.write_all(list.as_bytes()))
+            {
+                log::error!("could not write the concat list: {err}");
+                let _ = sender.send_blocking(Err(()));
+                return;
+            }
+
+            let output_ms = repeat.output_duration_ms(selection_ms);
+            let concat_span = total_ms.saturating_sub(done_ms);
+
+            let mut cmd = ffmpeg_base();
+            cmd.args(["-f", "concat", "-safe", "0"]);
+            cmd.arg("-i").arg(&list_path);
+            cmd.args(["-c", "copy"]);
+            cmd.arg(&output_path);
+
+            let mut outcome = run_ffmpeg_stage(
+                &mut cmd,
+                output_ms,
+                done_ms,
+                concat_span,
+                total_ms,
+                &sender,
+                &running_flag,
+            );
+
+            // A stream copy needs compatible stream parameters across the parts. If the
+            // muxer still refuses them, re-encode the joined result instead of losing
+            // the whole export.
+            if outcome == StageOutcome::Failed {
+                log::warn!("concat stream copy failed; re-encoding the joined result");
+
+                let mut cmd = ffmpeg_base();
+                cmd.args(["-f", "concat", "-safe", "0"]);
+                cmd.arg("-i").arg(&list_path);
+                cmd.arg("-c:v").arg(encoder);
+                cmd.args(&quality_args);
+                match audio_codec {
+                    Some(codec) => {
+                        cmd.arg("-c:a").arg(codec);
+                    }
+                    None => {
+                        cmd.arg("-an");
+                    }
+                }
+                cmd.arg(&output_path);
+
+                outcome = run_ffmpeg_stage(
+                    &mut cmd,
+                    output_ms,
+                    done_ms,
+                    concat_span,
+                    total_ms,
+                    &sender,
+                    &running_flag,
+                );
+            }
+
+            let _ = sender.send_blocking(if outcome == StageOutcome::Done {
+                Ok((total_ms, total_ms))
+            } else {
+                Err(())
+            });
+        });
+    }
+}
+
+fn ffmpeg_filter_chain(
+    oriented: Dimensions<f64>,
+    crop: (f64, f64, f64, f64),
+    scaled: Dimensions<u32>,
+    orientation: VideoOrientation,
+    adjustments: ColorAdjustments,
+    speed: PlaybackSpeed,
+    framerate: Framerate,
+) -> Vec<String> {
+    let (top, right, bottom, left) = crop;
+    let mut filters = orientation
+        .ffmpeg_filters()
+        .iter()
+        .map(|filter| filter.to_string())
+        .collect::<Vec<_>>();
+
+    let crop_w = (((1.0 - left - right) * oriented.width).round() as i64 / 2 * 2).max(2);
+    let crop_h = (((1.0 - top - bottom) * oriented.height).round() as i64 / 2 * 2).max(2);
+    let cropping = (left + right + top + bottom) > 0.001;
+    if cropping {
+        let crop_x = ((left * oriented.width).round() as i64).max(0);
+        let crop_y = ((top * oriented.height).round() as i64).max(0);
+        filters.push(format!("crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"));
+    }
+
+    filters.extend(adjustments.ffmpeg_filters());
+
+    let current_width = if cropping {
+        crop_w
+    } else {
+        oriented.width.round() as i64
+    };
+    let current_height = if cropping {
+        crop_h
+    } else {
+        oriented.height.round() as i64
+    };
+    if scaled.width as i64 != current_width || scaled.height as i64 != current_height {
+        filters.push(format!(
+            "libplacebo=w={}:h={}:upscaler=ewa_lanczossharp",
+            scaled.width, scaled.height
+        ));
+    }
+    if !speed.is_normal() {
+        filters.push(format!("setpts=PTS/{:.4}", speed.factor()));
+    }
+    filters.push(format!(
+        "fps={}/{}",
+        framerate.nominator,
+        framerate.denominator.max(1)
+    ));
+    filters
+}
+
+fn unique_segment_path(folder: &Path, input: &Path, index: usize, extension: &str) -> PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("clip");
+    let base = format!("{stem}-section-{:02}", index + 1);
+    let mut candidate = folder.join(format!("{base}.{extension}"));
+    let mut copy = 2;
+    while candidate.exists() {
+        candidate = folder.join(format!("{base}-{copy}.{extension}"));
+        copy += 1;
+    }
+    candidate
+}
+
+/// Sets a `gdouble` child property on a GES effect, warning instead of failing when
+/// the underlying element does not expose it.
+fn set_child_property_f64(effect: &Effect, property: &str, value: f64) {
+    if ges::prelude::TrackElementExt::set_child_property(effect, property, &value.to_value())
+        .is_err()
+    {
+        log::warn!("could not set effect property {property}");
+    }
+}
+
+/// Intermediate render files, removed when the export ends for any reason — success,
+/// failure or cancellation.
+#[derive(Default)]
+struct TempFiles(Vec<PathBuf>);
+
+impl TempFiles {
+    /// Reserves a hidden sibling of `near`, keeping intermediate files on the same
+    /// filesystem as the output.
+    fn reserve(&mut self, near: &Path, tag: &str, ext: &str) -> PathBuf {
+        let dir = near.parent().unwrap_or_else(|| Path::new("."));
+        let path = dir.join(format!(".clips-{}-{tag}.{ext}", std::process::id()));
+        self.0.push(path.clone());
+        path
+    }
+}
+
+impl Drop for TempFiles {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// How one ffmpeg invocation ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StageOutcome {
+    Done,
+    /// The user cancelled; the process was killed.
+    Cancelled,
+    Failed,
+}
+
+/// The shared ffmpeg invocation prefix. Errors go to the app's own stderr, which keeps
+/// failures diagnosable without a pipe this code would have to keep draining.
+fn ffmpeg_base() -> Command {
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-y", "-nostdin", "-hide_banner", "-loglevel", "error"]);
+    cmd
+}
+
+/// Runs one ffmpeg invocation, mapping its `-progress` output onto the
+/// `[base_ms, base_ms + span_ms]` slice of an export that totals `total_ms`.
+#[allow(clippy::too_many_arguments)]
+fn run_ffmpeg_stage(
+    cmd: &mut Command,
+    stage_ms: u64,
+    base_ms: u64,
+    span_ms: u64,
+    total_ms: u64,
+    sender: &async_channel::Sender<Result<(u64, u64), ()>>,
+    running_flag: &Arc<AtomicBool>,
+) -> StageOutcome {
+    cmd.args(["-progress", "pipe:1", "-nostats"]);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::inherit());
+
+    log::debug!("ffmpeg stage: {cmd:?}");
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            log::error!("could not start ffmpeg: {err}");
+            return StageOutcome::Failed;
+        }
+    };
+
+    let stdout = child.stdout.take().expect("ffmpeg stdout");
+    let mut ended = false;
+
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if !running_flag.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return StageOutcome::Cancelled;
+        }
+        if let Some(value) = line.strip_prefix("out_time_us=") {
+            if let Ok(us) = value.trim().parse::<u64>() {
+                let fraction = ((us / 1000) as f64 / stage_ms.max(1) as f64).clamp(0.0, 1.0);
+                let done = base_ms + (span_ms as f64 * fraction) as u64;
+                // Never report done == total: that is the export's completion signal.
+                let _ = sender.send_blocking(Ok((done.min(total_ms.saturating_sub(1)), total_ms)));
+            }
+        } else if line.starts_with("progress=end") {
+            ended = true;
+        }
+    }
+
+    if ended && child.wait().map(|status| status.success()).unwrap_or(false) {
+        StageOutcome::Done
+    } else {
+        StageOutcome::Failed
+    }
+}
+
+/// One line of an ffmpeg concat demuxer list.
+fn concat_entry(path: &Path) -> String {
+    format!("file '{}'\n", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+/// Chunk length for the reversed (boomerang) pass. ffmpeg's `reverse` filter buffers
+/// every frame of its input, so the chunk is sized against a fixed memory budget
+/// instead of growing with the clip length.
+fn reverse_chunk_ms(scaled: Dimensions<u32>, fps: f64) -> u64 {
+    const BUDGET_BYTES: u64 = 1_200_000_000;
+    // yuv420p is 1.5 bytes per pixel; 2 leaves room for alignment and frame overhead.
+    let frame_bytes = (scaled.width as u64 * scaled.height as u64 * 2).max(1);
+    let frames = (BUDGET_BYTES / frame_bytes).max(1);
+    let ms = (frames as f64 / fps.max(1.0) * 1000.0) as u64;
+    ms.clamp(1_000, 60_000)
+}
+
+/// Whether an ffmpeg hardware encoder is actually usable on this machine.
+/// Merely appearing in `ffmpeg -encoders` is not enough: for example, FFmpeg may
+/// expose `av1_nvenc` on an RTX 30-series GPU even though that generation cannot
+/// initialize the encoder. Each known NVENC codec is probed once with a 64×64 frame.
+pub(crate) fn ffmpeg_has_encoder(name: &str) -> bool {
+    static H264_NVENC: OnceLock<bool> = OnceLock::new();
+    static HEVC_NVENC: OnceLock<bool> = OnceLock::new();
+    static AV1_NVENC: OnceLock<bool> = OnceLock::new();
+
+    let cache = match name {
+        "h264_nvenc" => &H264_NVENC,
+        "hevc_nvenc" => &HEVC_NVENC,
+        "av1_nvenc" => &AV1_NVENC,
+        _ => return false,
+    };
+    *cache.get_or_init(|| probe_ffmpeg_encoder(name))
+}
+
+fn probe_ffmpeg_encoder(name: &str) -> bool {
+    let available = Command::new("ffmpeg")
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains(name))
+        .unwrap_or(false);
+    if !available {
+        return false;
+    }
+
+    Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=64x64:r=1",
+            "-frames:v",
+            "1",
+            "-an",
+            "-c:v",
+            name,
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+/// Rate-control args for constant-quality encoding (auto-scales file size with
+/// resolution, fixing the fixed-bitrate bloat).
+fn ffmpeg_quality_args(encoder: &str, quality: Quality) -> Vec<String> {
+    // CQ/CRF: lower = better quality + bigger file. These target visually-high
+    // quality without exceeding typical source bitrates (CQ20 was archival-overkill
+    // and produced files larger than the original).
+    let cq = match quality {
+        Quality::High => 23,
+        Quality::Medium => 27,
+        Quality::Low => 31,
+        Quality::Unchanged => 24,
+    };
+    let s = |n: i32| n.to_string();
+    match encoder {
+        "h264_nvenc" | "hevc_nvenc" | "av1_nvenc" => vec![
+            "-rc".into(),
+            "vbr".into(),
+            "-cq".into(),
+            s(cq),
+            "-b:v".into(),
+            "0".into(),
+        ],
+        "libx264" | "libx265" => vec!["-crf".into(), s(cq)],
+        "libsvtav1" => vec!["-crf".into(), s(cq + 10)],
+        "libvpx-vp9" => vec!["-crf".into(), s(cq), "-b:v".into(), "0".into()],
+        "libvpx" => vec!["-crf".into(), s(cq), "-b:v".into(), "2M".into()],
+        _ => vec![],
     }
 }

@@ -1006,6 +1006,11 @@ impl AppWindow {
                 width: scaled_width,
                 height: scaled_height,
             },
+            false,
+            crate::adjustments::Repeat::default(),
+            crate::adjustments::PlaybackSpeed::Normal,
+            Vec::new(),
+            crate::segments::SegmentExportMode::Join,
             running_flag,
         );
 
