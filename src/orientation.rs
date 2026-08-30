@@ -69,4 +69,19 @@ impl VideoOrientation {
     pub fn is_width_height_swapped(&self) -> bool {
         matches!(self, R90 | R270 | FR90 | FR270)
     }
+
+    /// Ordered ffmpeg video filters that reproduce this orientation. `transpose=1`
+    /// is 90° clockwise, `transpose=2` is 90° counter-clockwise.
+    pub fn ffmpeg_filters(&self) -> Vec<&'static str> {
+        match self {
+            Identity => vec![],
+            R90 => vec!["transpose=1"],
+            R180 => vec!["transpose=1", "transpose=1"],
+            R270 => vec!["transpose=2"],
+            FlippedIdentity => vec!["hflip"],
+            FR90 => vec!["hflip", "transpose=1"],
+            FR180 => vec!["vflip"],
+            FR270 => vec!["hflip", "transpose=2"],
+        }
+    }
 }
