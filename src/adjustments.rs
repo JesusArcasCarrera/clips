@@ -33,12 +33,12 @@ impl Default for ColorAdjustments {
 impl ColorAdjustments {
     /// GES effect used for live sharpness and its fallback renderer.
     ///
-    /// `gaussianblur` only accepts AYUV. Leaving the conversion implicit can make
-    /// GES negotiate decoder-specific buffers all the way into the effect; VP8/VP9
-    /// WebM streams are particularly prone to producing corrupted preview frames.
-    /// The explicit caps also bring hardware-decoded frames back into system memory.
+    /// `gaussianblur` only accepts AYUV, so the surrounding converters negotiate
+    /// the CPU format required by the filter when the preview pipeline is built.
+    /// An explicit AYUV capsfilter is deliberately avoided: inside a GES top effect
+    /// it can break renegotiation for the whole preview.
     pub const GST_SHARPEN_EFFECT: &'static str =
-        "videoconvert ! video/x-raw,format=AYUV ! gaussianblur sigma=0 ! videoconvert";
+        "videoconvert ! gaussianblur sigma=0 ! videoconvert";
 
     /// The identity adjustment: every knob at its no-op position.
     pub const NEUTRAL: Self = Self {
@@ -53,13 +53,23 @@ impl ColorAdjustments {
     /// Whether these values would leave the image unchanged, so the exporter can
     /// skip the (CPU-bound) colour filters entirely.
     pub fn is_neutral(&self) -> bool {
+        self.colour_is_neutral() && !self.has_sharpness()
+    }
+
+    /// Whether brightness, contrast, saturation, hue and gamma are all no-ops.
+    /// Sharpness is managed as a separate live effect so it cannot disrupt these
+    /// otherwise independent adjustments.
+    pub fn colour_is_neutral(&self) -> bool {
         const EPS: f64 = 0.0005;
         (self.brightness - Self::NEUTRAL.brightness).abs() < EPS
             && (self.contrast - Self::NEUTRAL.contrast).abs() < EPS
             && (self.saturation - Self::NEUTRAL.saturation).abs() < EPS
             && self.hue.abs() < 0.5
             && (self.gamma - Self::NEUTRAL.gamma).abs() < EPS
-            && self.sharpness.abs() < EPS
+    }
+
+    pub fn has_sharpness(&self) -> bool {
+        self.sharpness >= 0.0005
     }
 
     /// Hue in `videobalance`'s units, where `±1.0` is a full `±180°` rotation.
@@ -270,7 +280,10 @@ mod tests {
             .ffmpeg_filters()
             .iter()
             .any(|filter| filter.starts_with("unsharp=")));
+        assert!(adjusted.colour_is_neutral());
+        assert!(adjusted.has_sharpness());
         assert!(adjusted.gst_sharpen_sigma() < 0.0);
-        assert!(ColorAdjustments::GST_SHARPEN_EFFECT.contains("format=AYUV"));
+        assert!(ColorAdjustments::GST_SHARPEN_EFFECT.contains("gaussianblur"));
+        assert!(!ColorAdjustments::GST_SHARPEN_EFFECT.contains("video/x-raw"));
     }
 }

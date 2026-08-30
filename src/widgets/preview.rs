@@ -537,37 +537,67 @@ impl VideoPreview {
             .set_proportions(self.imp().crop_box.vertical_flip_proportions());
     }
 
-    /// Applies colour correction to the live preview. The `videobalance`/`gamma`
-    /// effects are attached to the clip on first use and then only have their
-    /// properties updated, so dragging a slider does not rebuild the pipeline.
+    /// Applies image correction to the live preview. Colour and sharpness are
+    /// managed independently: a sharpness negotiation failure must never disable
+    /// brightness, contrast, saturation, hue or gamma.
     pub fn set_color_adjustments(&self, adjustments: ColorAdjustments) {
         self.imp().adjustments.set(adjustments);
 
-        // Nothing to drive yet, or nothing to do: don't pay for the effects while
-        // every knob is still neutral.
         if self.imp().clip.borrow().is_none() || self.imp().pipeline.borrow().is_none() {
             return;
         }
-        if adjustments.is_neutral() && self.imp().balance.borrow().is_none() {
+        let needs_colour = !adjustments.colour_is_neutral();
+        let has_colour = self.imp().balance.borrow().is_some();
+        let needs_sharpness = adjustments.has_sharpness();
+        let has_sharpness = self.imp().sharpness.borrow().is_some();
+        let topology_changed = needs_colour != has_colour || needs_sharpness != has_sharpness;
+
+        if !topology_changed && adjustments.is_neutral() {
             return;
         }
 
-        self.ensure_adjustment_effects();
+        // CPU effects cannot be inserted reliably into an already-negotiated
+        // hardware-decoding pipeline (for example one producing CUDAMemory).
+        // Rebuild only when an effect appears or disappears; ordinary slider
+        // movement below remains a cheap property update.
+        let source_position = topology_changed.then(|| {
+            self.imp()
+                .pipeline
+                .borrow()
+                .as_ref()
+                .and_then(|pipeline| pipeline.query_position::<ClockTime>())
+                .map(ClockTime::mseconds)
+                .unwrap_or(0)
+                .saturating_add(self.imp().inpoint.get())
+                .min(self.imp().outpoint.get())
+        });
+        if topology_changed {
+            self.kill();
+        }
 
-        if let Some(balance) = self.imp().balance.borrow().as_ref() {
-            set_child_property_f64(balance, "brightness", adjustments.brightness);
-            set_child_property_f64(balance, "contrast", adjustments.contrast);
-            set_child_property_f64(balance, "saturation", adjustments.saturation);
-            set_child_property_f64(balance, "hue", adjustments.gst_hue());
-        }
-        if let Some(gamma) = self.imp().gamma.borrow().as_ref() {
-            set_child_property_f64(gamma, "gamma", adjustments.gamma);
-        }
-        if let Some(sharpness) = self.imp().sharpness.borrow().as_ref() {
-            set_child_property_f64(sharpness, "sigma", adjustments.gst_sharpen_sigma());
+        if needs_colour {
+            self.ensure_colour_effects();
+
+            if let Some(balance) = self.imp().balance.borrow().as_ref() {
+                set_child_property_f64(balance, "brightness", adjustments.brightness);
+                set_child_property_f64(balance, "contrast", adjustments.contrast);
+                set_child_property_f64(balance, "saturation", adjustments.saturation);
+                set_child_property_f64(balance, "hue", adjustments.gst_hue());
+            }
+            if let Some(gamma) = self.imp().gamma.borrow().as_ref() {
+                set_child_property_f64(gamma, "gamma", adjustments.gamma);
+            }
+        } else {
+            self.remove_colour_effects();
         }
 
-        self.commit();
+        self.update_sharpness_effect(adjustments);
+        if let Some(position) = source_position {
+            self.refresh_ui();
+            self.quiet_seek(position);
+        } else {
+            self.commit();
+        }
     }
 
     /// The colour correction currently shown in the preview.
@@ -575,7 +605,7 @@ impl VideoPreview {
         self.imp().adjustments.get()
     }
 
-    fn ensure_adjustment_effects(&self) {
+    fn ensure_colour_effects(&self) {
         if self.imp().balance.borrow().is_some() {
             return;
         }
@@ -588,22 +618,70 @@ impl VideoPreview {
             log::warn!("gamma is unavailable; colour adjustments will not preview");
             return;
         };
-        let sharpness = ges::Effect::new(ColorAdjustments::GST_SHARPEN_EFFECT).ok();
-        if sharpness.is_none() {
-            log::warn!("gaussianblur is unavailable; sharpness will not preview");
-        }
-
         if let Some(clip) = self.imp().clip.borrow().as_ref() {
-            clip.add_top_effect(&balance, 0).ok();
-            clip.add_top_effect(&gamma, 0).ok();
-            if let Some(sharpness) = sharpness.as_ref() {
-                clip.add_top_effect(sharpness, 0).ok();
+            if let Err(err) = clip.add_top_effect(&balance, 0) {
+                log::warn!("could not add videobalance to the preview: {err}");
+                return;
+            }
+            if let Err(err) = clip.add_top_effect(&gamma, 0) {
+                log::warn!("could not add gamma to the preview: {err}");
+                clip.remove(&balance).ok();
+                return;
             }
         }
 
         self.imp().balance.replace(Some(balance));
         self.imp().gamma.replace(Some(gamma));
-        self.imp().sharpness.replace(sharpness);
+    }
+
+    fn remove_colour_effects(&self) {
+        let balance = self.imp().balance.borrow_mut().take();
+        let gamma = self.imp().gamma.borrow_mut().take();
+        let clip = self.imp().clip.borrow();
+        let Some(clip) = clip.as_ref() else {
+            return;
+        };
+
+        for (name, effect) in [("videobalance", balance), ("gamma", gamma)] {
+            if let Some(effect) = effect {
+                if let Err(err) = clip.remove(&effect) {
+                    log::warn!("could not remove {name} from the preview: {err}");
+                }
+            }
+        }
+    }
+
+    fn update_sharpness_effect(&self, adjustments: ColorAdjustments) {
+        if !adjustments.has_sharpness() {
+            let previous = self.imp().sharpness.borrow_mut().take();
+            if let (Some(clip), Some(effect)) =
+                (self.imp().clip.borrow().as_ref(), previous.as_ref())
+            {
+                if let Err(err) = clip.remove(effect) {
+                    log::warn!("could not remove sharpness from the preview: {err}");
+                }
+            }
+            return;
+        }
+
+        if let Some(sharpness) = self.imp().sharpness.borrow().as_ref() {
+            set_child_property_f64(sharpness, "sigma", adjustments.gst_sharpen_sigma());
+            return;
+        }
+
+        let Ok(sharpness) = ges::Effect::new(ColorAdjustments::GST_SHARPEN_EFFECT) else {
+            log::warn!("gaussianblur is unavailable; sharpness will not preview");
+            return;
+        };
+        set_child_property_f64(&sharpness, "sigma", adjustments.gst_sharpen_sigma());
+
+        if let Some(clip) = self.imp().clip.borrow().as_ref() {
+            if let Err(err) = clip.add_top_effect(&sharpness, 0) {
+                log::warn!("could not add sharpness to the preview: {err}");
+                return;
+            }
+        }
+        self.imp().sharpness.replace(Some(sharpness));
     }
 
     pub fn mute(&self) {
