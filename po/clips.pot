@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: clips\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-01-20 21:45-0800\n"
+"POT-Creation-Date: 2026-08-30 18:24+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -20,7 +20,7 @@ msgstr ""
 #: data/io.gitlab.adhami3310.Clips.desktop.in.in:2
 #: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:5
 #: data/resources/blueprints/window.blp:9
-#: data/resources/blueprints/window.blp:42 src/main.rs:56
+#: data/resources/blueprints/window.blp:41 src/main.rs:63
 msgid "Clips"
 msgstr ""
 
@@ -124,142 +124,304 @@ msgstr ""
 msgid "Bottom right crop corner"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:26
+#: data/resources/blueprints/window.blp:17
+msgid "Toggle Sidebar"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:25
 msgid "Main Menu"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:43
+#: data/resources/blueprints/window.blp:42
 msgid "Choose a video to edit"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:54
-#: data/resources/blueprints/window.blp:375
+#: data/resources/blueprints/window.blp:57
+msgid "Drop a video file here"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:67
+msgid "Drag and drop a video here"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:74
+msgid "Open it directly without using the button"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:89
+#: data/resources/blueprints/window.blp:786
 msgid "Open Video…"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:76
+#: data/resources/blueprints/window.blp:111
 msgid "Could not Load Video"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:77
+#: data/resources/blueprints/window.blp:112
 msgid "This video could be corrupted or may use an unsupported file format."
 msgstr ""
 
-#: data/resources/blueprints/window.blp:110
+#: data/resources/blueprints/window.blp:159
 msgid "Rotate Left"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:115
+#: data/resources/blueprints/window.blp:164
 msgid "Rotate Right"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:120
+#: data/resources/blueprints/window.blp:169
 msgid "Flip Horizontally"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:125
+#: data/resources/blueprints/window.blp:174
 msgid "Flip Vertically"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:130 src/window.rs:270
+#: data/resources/blueprints/window.blp:179 src/window.rs:475
 msgid "Disable Audio"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:137
-msgid "Resize"
+#: data/resources/blueprints/window.blp:209
+msgid "Sections"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:142
-#: data/resources/blueprints/window.blp:143
-#: data/resources/blueprints/window.blp:151
-#: data/resources/blueprints/window.blp:153
-msgid "Width"
+#: data/resources/blueprints/window.blp:228
+msgid ""
+"Select a section to edit it in the timeline. The list order is the export "
+"order."
 msgstr ""
 
-#: data/resources/blueprints/window.blp:160
-msgid "Preserve aspect ratio"
+#: data/resources/blueprints/window.blp:244
+msgid "Remove"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:165
-#: data/resources/blueprints/window.blp:166
-#: data/resources/blueprints/window.blp:174
-#: data/resources/blueprints/window.blp:175
-msgid "Height"
+#: data/resources/blueprints/window.blp:245
+msgid "Remove Current Section"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:186
-msgid "Choose between resizing with percentages or using exact pixels"
+#: data/resources/blueprints/window.blp:250
+msgid "Add Section"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:190
-msgid "%"
+#: data/resources/blueprints/window.blp:251 src/window.rs:1317
+msgid "Add Section at Playhead"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:190
-msgid "px"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:199
-msgid "Framerate"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:213
-msgid "Container Format"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:219
-msgid "Video Encoding"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:225
-msgid "Audio Encoding"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:236
-msgid "Save Video"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:264
-msgid "Video Exported"
-msgstr ""
-
-#: data/resources/blueprints/window.blp:274
-msgid "View Result"
+#: data/resources/blueprints/window.blp:263
+msgid "Video"
 msgstr ""
 
 #: data/resources/blueprints/window.blp:286
-msgid "Finish"
+msgid "Resize"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:308
-msgid "Exporting Video Unsuccessful"
+#: data/resources/blueprints/window.blp:291
+#: data/resources/blueprints/window.blp:292
+#: data/resources/blueprints/window.blp:300
+#: data/resources/blueprints/window.blp:302
+msgid "Width"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:317
-msgid "Retry"
+#: data/resources/blueprints/window.blp:309
+msgid "Preserve aspect ratio"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:337
-msgid "Rendering"
+#: data/resources/blueprints/window.blp:314
+#: data/resources/blueprints/window.blp:315
+#: data/resources/blueprints/window.blp:323
+#: data/resources/blueprints/window.blp:325
+msgid "Height"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:335
+msgid "Choose between resizing with percentages or using exact pixels"
 msgstr ""
 
 #: data/resources/blueprints/window.blp:339
+msgid "%"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:339
+msgid "px"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:349
+msgid "Improve Quality"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:350 src/window.rs:1175
+msgid "Export at 2× with high-quality upscaling"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:354
+msgid "Framerate"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:370
+msgid "Image Adjustments"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:371 src/window.rs:1137
+msgid "Brightness, contrast, colour, sharpness"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:374
+msgid "Brightness"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:393
+msgid "Contrast"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:412
+msgid "Saturation"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:431
+msgid "Hue"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:450
+msgid "Gamma"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:469
+msgid "Sharpness"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:488
+msgid "Reset Adjustments"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:493
+msgid "Repeat"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:499
+msgid "Speed"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:500 src/window.rs:1390
+msgid "Change video and audio speed"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:506
+msgid "Cycles"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:525
+msgid "Export"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:548
+msgid "Multiple Sections"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:549
+msgid "Export order follows the section list"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:556
+msgid "Container Format"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:562
+msgid "Video Encoding"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:568
+msgid "Audio Encoding"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:574
+msgid "Quality"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:578
+msgid "Low"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:578
+msgid "Medium"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:578
+msgid "High"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:578
+msgid "Unchanged"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:585
+msgid "Hardware Acceleration"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:586
+msgid "Use the GPU (NVENC) when the codec supports it"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:590
+msgid "Encoder"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:591
+msgid "…"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:603 src/window.rs:1339
+msgid "Save Video"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:637
+msgid "Video Exported"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:647
+msgid "Open"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:660
+msgid "Show in Folder"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:672
+msgid "Back to Editing"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:684
+msgid "Finish"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:705
+msgid "Exporting Video Unsuccessful"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:714
+msgid "Retry"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:734
+msgid "Rendering"
+msgstr ""
+
+#: data/resources/blueprints/window.blp:736
 msgid "This may take a while"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:354 src/window.rs:678
+#: data/resources/blueprints/window.blp:751 src/window.rs:1010
 msgid "_Cancel"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:380
+#: data/resources/blueprints/window.blp:791
 msgid "New Window"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:387
+#: data/resources/blueprints/window.blp:798
 msgid "Keyboard Shortcuts"
 msgstr ""
 
-#: data/resources/blueprints/window.blp:392
+#: data/resources/blueprints/window.blp:803
 msgid "About Clips"
 msgstr ""
 
@@ -271,41 +433,121 @@ msgstr ""
 msgid "Right trimming handle"
 msgstr ""
 
-#: src/window.rs:267
+#: src/window.rs:472
 msgid "Enable Audio"
 msgstr ""
 
-#: src/window.rs:573
+#: src/window.rs:497
+msgid "Hide Sidebar"
+msgstr ""
+
+#: src/window.rs:500
+msgid "Show Sidebar"
+msgstr ""
+
+#: src/window.rs:905
 msgid "Pause"
 msgstr ""
 
-#: src/window.rs:578
+#: src/window.rs:910
 msgid "Play"
 msgstr ""
 
-#: src/window.rs:673
+#: src/window.rs:1005
 msgid "Stop rendering?"
 msgstr ""
 
-#: src/window.rs:674
+#: src/window.rs:1006
 msgid "You will lose all progress."
 msgstr ""
 
-#: src/window.rs:678
+#: src/window.rs:1010
 msgid "_Stop"
 msgstr ""
 
-#: src/window.rs:709
+#: src/window.rs:1041
 msgid "Video Files"
 msgstr ""
 
-#: src/window.rs:803
+#: src/window.rs:1065
+msgid "Choose Where to Save the Clips"
+msgstr ""
+
+#: src/window.rs:1139
+msgid "Modified"
+msgstr ""
+
+#: src/window.rs:1177
+msgid "Choose MP4, WebM or Matroska in Export"
+msgstr ""
+
+#: src/window.rs:1183
+msgid "Controlled by Improve Quality · 200%"
+msgstr ""
+
+#: src/window.rs:1289
+#, rust-format
+msgid "Section {}"
+msgstr ""
+
+#: src/window.rs:1291
+#, rust-format
+msgid "{} – {} · {}"
+msgstr ""
+
+#: src/window.rs:1319
+msgid "Multiple sections are not available for this container format"
+msgstr ""
+
+#: src/window.rs:1327
+msgid "Every section must have a duration"
+msgstr ""
+
+#: src/window.rs:1330
+msgid "Choose a container format that supports multiple sections"
+msgstr ""
+
+#: src/window.rs:1337
+msgid "Save Clips"
+msgstr ""
+
+#: src/window.rs:1388 src/window.rs:1417
+msgid "Not available for this container format"
+msgstr ""
+
+#: src/window.rs:1400 src/window.rs:1439
+#, rust-format
+msgid "Resulting length: {}"
+msgstr ""
+
+#: src/window.rs:1415
+msgid "Not available with multiple sections"
+msgstr ""
+
+#: src/window.rs:1576
+msgid "Not supported by the selected video codec"
+msgstr ""
+
+#: src/window.rs:1577
+msgid "No compatible hardware encoder was found"
+msgstr ""
+
+#: src/window.rs:1578
+msgid "Use the available hardware encoder"
+msgstr ""
+
+#: src/window.rs:1613
+#, rust-format
+msgid "Saved {} clips in {}"
+msgstr ""
+
+#: src/window.rs:1617
 #, rust-format
 msgid "Saved as {}"
 msgstr ""
 
 #. Translators: Replace "translator-credits" with your names, one name per line
-#: src/window.rs:980
+#: src/window.rs:1816
 msgid "translator-credits"
 msgstr ""
 
@@ -315,4 +557,40 @@ msgstr ""
 
 #: src/profiles.rs:79
 msgid "Keep as-is"
+msgstr ""
+
+#: src/adjustments.rs:120
+msgid "Normal"
+msgstr ""
+
+#: src/adjustments.rs:121
+msgid "0.75×"
+msgstr ""
+
+#: src/adjustments.rs:122
+msgid "0.5×"
+msgstr ""
+
+#: src/adjustments.rs:123
+msgid "0.25×"
+msgstr ""
+
+#: src/adjustments.rs:181
+msgid "None"
+msgstr ""
+
+#: src/adjustments.rs:182
+msgid "Loop"
+msgstr ""
+
+#: src/adjustments.rs:183
+msgid "Boomerang"
+msgstr ""
+
+#: src/segments.rs:47
+msgid "Join into one clip"
+msgstr ""
+
+#: src/segments.rs:48
+msgid "Export individual clips"
 msgstr ""

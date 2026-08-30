@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: clips\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-01-27 13:08-0300\n"
+"POT-Creation-Date: 2026-08-30 18:24+0200\n"
 "PO-Revision-Date: 2023-06-16 12:29-0600\n"
 "Last-Translator: Daniel Espinoza Cortés <danielespinoza0109@gmail.com>\n"
 "Language-Team: \n"
@@ -20,7 +20,7 @@ msgstr ""
 #: data/io.gitlab.adhami3310.Clips.desktop.in.in:2
 #: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:5
 #: data/resources/blueprints/window.blp:9
-#: data/resources/blueprints/window.blp:42 src/main.rs:48
+#: data/resources/blueprints/window.blp:41 src/main.rs:63
 msgid "Clips"
 msgstr "Clips"
 
@@ -33,8 +33,8 @@ msgid "Polish Your Videos"
 msgstr "Pule tus videos"
 
 #: data/io.gitlab.adhami3310.Clips.desktop.in.in:10
-msgid "video;edit;trim;crop;convert"
-msgstr "video;editar;acortar;recortar;convertir"
+msgid "video;edit;trim;crop;convert;"
+msgstr "video;editar;acortar;recortar;convertir;"
 
 #: data/io.gitlab.adhami3310.Clips.gschema.xml.in:6
 msgid "Window width"
@@ -48,15 +48,11 @@ msgstr "Altura de ventana"
 msgid "Window maximized state"
 msgstr "Estado maximizado de la ventana"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:6
-msgid "Khaleel Al-Adhami"
-msgstr "Khaleel Al-Adhami"
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:7
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:10
 msgid "Polish your videos"
 msgstr "Pule tus videos"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:13
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:16
 msgid ""
 "Trim, flip, rotate and crop individual clips. Clips is a useful tool for "
 "quickly editing short videos and screencasts. It's also capable of exporting "
@@ -66,59 +62,29 @@ msgstr ""
 "para editar rápidamente videos cortos y capturas de video. También es capaz "
 "de exportar cualquier video en cualquier formato de tu elección."
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:28
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:33
 msgid "video"
 msgstr "video"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:29
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:34
 msgid "edit"
 msgstr "editar"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:30
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:35
 msgid "trim"
 msgstr "acortar"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:31
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:36
 msgid "crop"
 msgstr "recortar"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:32
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:37
 msgid "convert"
 msgstr "convertir"
 
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:48
+#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:53
 msgid "Editing screen with default options"
 msgstr "Editar pantalla con opciones por defecto"
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:68
-msgid "Fixes crash when framerate is undefined."
-msgstr ""
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:73
-msgid "Fixes various random crashes."
-msgstr ""
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:78
-msgid "Fixes various bugs and upgrades to GNOME runtime 45."
-msgstr ""
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:83
-msgid ""
-"This minor release introduces a fix for X11 and additional translation "
-"support."
-msgstr ""
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:88
-msgid ""
-"This minor release introduces a couple of bug fixes and enhances keyboard "
-"accessibility."
-msgstr ""
-"Este lanzamiento menor corrige algunos fallos y mejora la accesibilidad con "
-"el teclado."
-
-#: data/io.gitlab.adhami3310.Clips.metainfo.xml.in.in:93
-msgid "Initial version."
-msgstr "Versión inicial."
 
 #: data/resources/blueprints/help-overlay.blp:11
 msgctxt "shortcut window"
@@ -126,10 +92,9 @@ msgid "General"
 msgstr "General"
 
 #: data/resources/blueprints/help-overlay.blp:14
-#, fuzzy
 msgctxt "shortcut window"
 msgid "Open File"
-msgstr "Abrir archivo…"
+msgstr "Abrir archivo"
 
 #: data/resources/blueprints/help-overlay.blp:19
 msgctxt "shortcut window"
@@ -162,186 +127,432 @@ msgstr "Recortar esquina inferior izquierda"
 msgid "Bottom right crop corner"
 msgstr "Recortar esquina inferior derecha"
 
-#: data/resources/blueprints/window.blp:26
-msgid "Main Menu"
-msgstr ""
+#: data/resources/blueprints/window.blp:17
+msgid "Toggle Sidebar"
+msgstr "Mostrar u ocultar la barra lateral"
 
-#: data/resources/blueprints/window.blp:43
+#: data/resources/blueprints/window.blp:25
+msgid "Main Menu"
+msgstr "Menú principal"
+
+#: data/resources/blueprints/window.blp:42
 msgid "Choose a video to edit"
 msgstr "Elija un video para editar"
 
-#: data/resources/blueprints/window.blp:54
-#: data/resources/blueprints/window.blp:375
-#, fuzzy
-msgid "Open Video…"
-msgstr "Abrir video"
+#: data/resources/blueprints/window.blp:57
+msgid "Drop a video file here"
+msgstr "Suelta aquí un archivo de vídeo"
 
-#: data/resources/blueprints/window.blp:76
+#: data/resources/blueprints/window.blp:67
+msgid "Drag and drop a video here"
+msgstr "Arrastra y suelta aquí un vídeo"
+
+#: data/resources/blueprints/window.blp:74
+msgid "Open it directly without using the button"
+msgstr "Ábrelo directamente sin usar el botón"
+
+#: data/resources/blueprints/window.blp:89
+#: data/resources/blueprints/window.blp:786
+msgid "Open Video…"
+msgstr "Abrir vídeo…"
+
+#: data/resources/blueprints/window.blp:111
 msgid "Could not Load Video"
 msgstr "No se pudo cargar video"
 
-#: data/resources/blueprints/window.blp:77
+#: data/resources/blueprints/window.blp:112
 msgid "This video could be corrupted or may use an unsupported file format."
 msgstr "Este video podría estar corrupto o utiliza un formato no soportado."
 
-#: data/resources/blueprints/window.blp:110
+#: data/resources/blueprints/window.blp:159
 msgid "Rotate Left"
-msgstr ""
+msgstr "Girar a la izquierda"
 
-#: data/resources/blueprints/window.blp:115
+#: data/resources/blueprints/window.blp:164
 msgid "Rotate Right"
-msgstr ""
+msgstr "Girar a la derecha"
 
-#: data/resources/blueprints/window.blp:120
+#: data/resources/blueprints/window.blp:169
 msgid "Flip Horizontally"
-msgstr ""
+msgstr "Voltear horizontalmente"
 
-#: data/resources/blueprints/window.blp:125
+#: data/resources/blueprints/window.blp:174
 msgid "Flip Vertically"
-msgstr ""
+msgstr "Voltear verticalmente"
 
-#: data/resources/blueprints/window.blp:130 src/window.rs:268
+#: data/resources/blueprints/window.blp:179 src/window.rs:475
 msgid "Disable Audio"
-msgstr ""
+msgstr "Desactivar audio"
 
-#: data/resources/blueprints/window.blp:137
+#: data/resources/blueprints/window.blp:209
+msgid "Sections"
+msgstr "Secciones"
+
+#: data/resources/blueprints/window.blp:228
+msgid ""
+"Select a section to edit it in the timeline. The list order is the export "
+"order."
+msgstr ""
+"Selecciona una sección para editarla en la línea de tiempo. El orden de la "
+"lista será el orden de exportación."
+
+#: data/resources/blueprints/window.blp:244
+msgid "Remove"
+msgstr "Eliminar"
+
+#: data/resources/blueprints/window.blp:245
+msgid "Remove Current Section"
+msgstr "Eliminar la sección actual"
+
+#: data/resources/blueprints/window.blp:250
+msgid "Add Section"
+msgstr "Añadir sección"
+
+#: data/resources/blueprints/window.blp:251 src/window.rs:1317
+msgid "Add Section at Playhead"
+msgstr "Añadir sección en el cabezal de reproducción"
+
+#: data/resources/blueprints/window.blp:263
+msgid "Video"
+msgstr "Vídeo"
+
+#: data/resources/blueprints/window.blp:286
 msgid "Resize"
 msgstr "Redimensionar"
 
-#: data/resources/blueprints/window.blp:142
-#: data/resources/blueprints/window.blp:143
-#: data/resources/blueprints/window.blp:151
-#: data/resources/blueprints/window.blp:153
+#: data/resources/blueprints/window.blp:291
+#: data/resources/blueprints/window.blp:292
+#: data/resources/blueprints/window.blp:300
+#: data/resources/blueprints/window.blp:302
 msgid "Width"
 msgstr "Ancho"
 
-#: data/resources/blueprints/window.blp:160
+#: data/resources/blueprints/window.blp:309
 msgid "Preserve aspect ratio"
 msgstr "Mantener relación de aspecto"
 
-#: data/resources/blueprints/window.blp:165
-#: data/resources/blueprints/window.blp:166
-#: data/resources/blueprints/window.blp:174
-#: data/resources/blueprints/window.blp:175
+#: data/resources/blueprints/window.blp:314
+#: data/resources/blueprints/window.blp:315
+#: data/resources/blueprints/window.blp:323
+#: data/resources/blueprints/window.blp:325
 msgid "Height"
 msgstr "Altura"
 
-#: data/resources/blueprints/window.blp:186
+#: data/resources/blueprints/window.blp:335
 msgid "Choose between resizing with percentages or using exact pixels"
 msgstr "Elija entre redimensionar con porcentajes o con pixeles exactos"
 
-#: data/resources/blueprints/window.blp:190
+#: data/resources/blueprints/window.blp:339
 msgid "%"
 msgstr "%"
 
-#: data/resources/blueprints/window.blp:190
+#: data/resources/blueprints/window.blp:339
 msgid "px"
 msgstr "px"
 
-#: data/resources/blueprints/window.blp:199
+#: data/resources/blueprints/window.blp:349
+msgid "Improve Quality"
+msgstr "Mejorar calidad"
+
+#: data/resources/blueprints/window.blp:350 src/window.rs:1175
+msgid "Export at 2× with high-quality upscaling"
+msgstr "Exportar al 200 % con reescalado de alta calidad"
+
+#: data/resources/blueprints/window.blp:354
 msgid "Framerate"
 msgstr "Fotogramas por segundo"
 
-#: data/resources/blueprints/window.blp:213
+#: data/resources/blueprints/window.blp:370
+msgid "Image Adjustments"
+msgstr "Ajustes de imagen"
+
+#: data/resources/blueprints/window.blp:371 src/window.rs:1137
+msgid "Brightness, contrast, colour, sharpness"
+msgstr "Brillo, contraste, color y nitidez"
+
+#: data/resources/blueprints/window.blp:374
+msgid "Brightness"
+msgstr "Brillo"
+
+#: data/resources/blueprints/window.blp:393
+msgid "Contrast"
+msgstr "Contraste"
+
+#: data/resources/blueprints/window.blp:412
+msgid "Saturation"
+msgstr "Saturación"
+
+#: data/resources/blueprints/window.blp:431
+msgid "Hue"
+msgstr "Tono"
+
+#: data/resources/blueprints/window.blp:450
+msgid "Gamma"
+msgstr "Gamma"
+
+#: data/resources/blueprints/window.blp:469
+msgid "Sharpness"
+msgstr "Nitidez"
+
+#: data/resources/blueprints/window.blp:488
+msgid "Reset Adjustments"
+msgstr "Restablecer ajustes"
+
+#: data/resources/blueprints/window.blp:493
+msgid "Repeat"
+msgstr "Repetición"
+
+#: data/resources/blueprints/window.blp:499
+msgid "Speed"
+msgstr "Velocidad"
+
+#: data/resources/blueprints/window.blp:500 src/window.rs:1390
+msgid "Change video and audio speed"
+msgstr "Cambiar la velocidad del vídeo y del audio"
+
+#: data/resources/blueprints/window.blp:506
+msgid "Cycles"
+msgstr "Ciclos"
+
+#: data/resources/blueprints/window.blp:525
+msgid "Export"
+msgstr "Exportar"
+
+#: data/resources/blueprints/window.blp:548
+msgid "Multiple Sections"
+msgstr "Varias secciones"
+
+#: data/resources/blueprints/window.blp:549
+msgid "Export order follows the section list"
+msgstr "El orden de exportación sigue la lista de secciones"
+
+#: data/resources/blueprints/window.blp:556
 msgid "Container Format"
 msgstr "Formato contenedor"
 
-#: data/resources/blueprints/window.blp:219
+#: data/resources/blueprints/window.blp:562
 msgid "Video Encoding"
 msgstr "Codificación de video"
 
-#: data/resources/blueprints/window.blp:225
+#: data/resources/blueprints/window.blp:568
 msgid "Audio Encoding"
 msgstr "Codificación de audio"
 
-#: data/resources/blueprints/window.blp:236
+#: data/resources/blueprints/window.blp:574
+msgid "Quality"
+msgstr "Calidad"
+
+#: data/resources/blueprints/window.blp:578
+msgid "Low"
+msgstr "Baja"
+
+#: data/resources/blueprints/window.blp:578
+msgid "Medium"
+msgstr "Media"
+
+#: data/resources/blueprints/window.blp:578
+msgid "High"
+msgstr "Alta"
+
+#: data/resources/blueprints/window.blp:578
+msgid "Unchanged"
+msgstr "Sin cambios"
+
+#: data/resources/blueprints/window.blp:585
+msgid "Hardware Acceleration"
+msgstr "Aceleración por hardware"
+
+#: data/resources/blueprints/window.blp:586
+msgid "Use the GPU (NVENC) when the codec supports it"
+msgstr "Usar la GPU (NVENC) cuando el códec lo permita"
+
+#: data/resources/blueprints/window.blp:590
+msgid "Encoder"
+msgstr "Codificador"
+
+#: data/resources/blueprints/window.blp:591
+msgid "…"
+msgstr "…"
+
+#: data/resources/blueprints/window.blp:603 src/window.rs:1339
 msgid "Save Video"
 msgstr "Guardar video"
 
-#: data/resources/blueprints/window.blp:264
+#: data/resources/blueprints/window.blp:637
 msgid "Video Exported"
-msgstr "Video exportado"
+msgstr "Vídeo exportado"
 
-#: data/resources/blueprints/window.blp:274
-msgid "View Result"
-msgstr ""
+#: data/resources/blueprints/window.blp:647
+msgid "Open"
+msgstr "Abrir"
 
-#: data/resources/blueprints/window.blp:286
+#: data/resources/blueprints/window.blp:660
+msgid "Show in Folder"
+msgstr "Mostrar en la carpeta"
+
+#: data/resources/blueprints/window.blp:672
+msgid "Back to Editing"
+msgstr "Volver a editar"
+
+#: data/resources/blueprints/window.blp:684
 msgid "Finish"
 msgstr "Terminar"
 
-#: data/resources/blueprints/window.blp:308
+#: data/resources/blueprints/window.blp:705
 msgid "Exporting Video Unsuccessful"
 msgstr "Exportación del video no exitoso"
 
-#: data/resources/blueprints/window.blp:317
+#: data/resources/blueprints/window.blp:714
 msgid "Retry"
 msgstr "Reintentar"
 
-#: data/resources/blueprints/window.blp:337
-#, fuzzy
+#: data/resources/blueprints/window.blp:734
 msgid "Rendering"
-msgstr "Renderizando…"
+msgstr "Renderizando"
 
-#: data/resources/blueprints/window.blp:339
+#: data/resources/blueprints/window.blp:736
 msgid "This may take a while"
 msgstr "Esto podría tardar"
 
-#: data/resources/blueprints/window.blp:354 src/window.rs:666
+#: data/resources/blueprints/window.blp:751 src/window.rs:1010
 msgid "_Cancel"
 msgstr "Cancelar"
 
-#: data/resources/blueprints/window.blp:380
+#: data/resources/blueprints/window.blp:791
 msgid "New Window"
 msgstr "Nueva ventana"
 
-#: data/resources/blueprints/window.blp:387
+#: data/resources/blueprints/window.blp:798
 msgid "Keyboard Shortcuts"
 msgstr "Atajos del teclado"
 
-#: data/resources/blueprints/window.blp:392
+#: data/resources/blueprints/window.blp:803
 msgid "About Clips"
 msgstr "Acerca de Clips"
 
-#: data/resources/blueprints/timeline.blp:18
+#: data/resources/blueprints/timeline.blp:17
 msgid "Left trimming handle"
 msgstr "Manija de acortar izquierda"
 
-#: data/resources/blueprints/timeline.blp:52
+#: data/resources/blueprints/timeline.blp:51
 msgid "Right trimming handle"
 msgstr "Manija de acortar derecha"
 
-#: src/window.rs:265
+#: src/window.rs:472
 msgid "Enable Audio"
-msgstr ""
+msgstr "Activar audio"
 
-#: src/window.rs:561
+#: src/window.rs:497
+msgid "Hide Sidebar"
+msgstr "Ocultar barra lateral"
+
+#: src/window.rs:500
+msgid "Show Sidebar"
+msgstr "Mostrar barra lateral"
+
+#: src/window.rs:905
 msgid "Pause"
-msgstr ""
+msgstr "Pausar"
 
-#: src/window.rs:566
+#: src/window.rs:910
 msgid "Play"
-msgstr ""
+msgstr "Reproducir"
 
-#: src/window.rs:661
+#: src/window.rs:1005
 msgid "Stop rendering?"
 msgstr "¿Detener renderización?"
 
-#: src/window.rs:662
+#: src/window.rs:1006
 msgid "You will lose all progress."
 msgstr "Perderás todo el progreso."
 
-#: src/window.rs:666
+#: src/window.rs:1010
 msgid "_Stop"
 msgstr "Detener"
 
-#: src/window.rs:697
-#, fuzzy
+#: src/window.rs:1041
 msgid "Video Files"
-msgstr "Editor de video"
+msgstr "Archivos de vídeo"
+
+#: src/window.rs:1065
+msgid "Choose Where to Save the Clips"
+msgstr "Elige dónde guardar los clips"
+
+#: src/window.rs:1139
+msgid "Modified"
+msgstr "Modificados"
+
+#: src/window.rs:1177
+msgid "Choose MP4, WebM or Matroska in Export"
+msgstr "Elige MP4, WebM o Matroska en Exportar"
+
+#: src/window.rs:1183
+msgid "Controlled by Improve Quality · 200%"
+msgstr "Controlado por Mejorar calidad · 200 %"
+
+#: src/window.rs:1289
+#, rust-format
+msgid "Section {}"
+msgstr "Sección {}"
+
+#: src/window.rs:1291
+#, rust-format
+msgid "{} – {} · {}"
+msgstr "{} – {} · {}"
+
+#: src/window.rs:1319
+msgid "Multiple sections are not available for this container format"
+msgstr "No se admiten varias secciones con este formato contenedor"
+
+#: src/window.rs:1327
+msgid "Every section must have a duration"
+msgstr "Todas las secciones deben tener una duración"
+
+#: src/window.rs:1330
+msgid "Choose a container format that supports multiple sections"
+msgstr "Elige un formato contenedor que admita varias secciones"
+
+#: src/window.rs:1337
+msgid "Save Clips"
+msgstr "Guardar clips"
+
+#: src/window.rs:1388 src/window.rs:1417
+msgid "Not available for this container format"
+msgstr "No disponible para este formato contenedor"
+
+#: src/window.rs:1400 src/window.rs:1439
+#, rust-format
+msgid "Resulting length: {}"
+msgstr "Duración resultante: {}"
+
+#: src/window.rs:1415
+msgid "Not available with multiple sections"
+msgstr "No disponible con varias secciones"
+
+#: src/window.rs:1576
+msgid "Not supported by the selected video codec"
+msgstr "No compatible con el códec de vídeo seleccionado"
+
+#: src/window.rs:1577
+msgid "No compatible hardware encoder was found"
+msgstr "No se encontró ningún codificador de hardware compatible"
+
+#: src/window.rs:1578
+msgid "Use the available hardware encoder"
+msgstr "Usar el codificador de hardware disponible"
+
+#: src/window.rs:1613
+#, rust-format
+msgid "Saved {} clips in {}"
+msgstr "Se han guardado {} clips en {}"
+
+#: src/window.rs:1617
+#, rust-format
+msgid "Saved as {}"
+msgstr "Guardado como {}"
 
 #. Translators: Replace "translator-credits" with your names, one name per line
-#: src/window.rs:956
+#: src/window.rs:1816
 msgid "translator-credits"
 msgstr "Daniel Espinoza Cortés"
 
@@ -351,7 +562,56 @@ msgstr "Recomendado (WEBM, AV1, Opus)"
 
 #: src/profiles.rs:79
 msgid "Keep as-is"
-msgstr ""
+msgstr "Mantener sin cambios"
+
+#: src/adjustments.rs:120
+msgid "Normal"
+msgstr "Normal"
+
+#: src/adjustments.rs:121
+msgid "0.75×"
+msgstr "0,75×"
+
+#: src/adjustments.rs:122
+msgid "0.5×"
+msgstr "0,5×"
+
+#: src/adjustments.rs:123
+msgid "0.25×"
+msgstr "0,25×"
+
+#: src/adjustments.rs:181
+msgid "None"
+msgstr "Ninguna"
+
+#: src/adjustments.rs:182
+msgid "Loop"
+msgstr "Bucle"
+
+#: src/adjustments.rs:183
+msgid "Boomerang"
+msgstr "Boomerang"
+
+#: src/segments.rs:47
+msgid "Join into one clip"
+msgstr "Unir en un solo clip"
+
+#: src/segments.rs:48
+msgid "Export individual clips"
+msgstr "Exportar clips individuales"
+
+#~ msgid "Khaleel Al-Adhami"
+#~ msgstr "Khaleel Al-Adhami"
+
+#~ msgid ""
+#~ "This minor release introduces a couple of bug fixes and enhances keyboard "
+#~ "accessibility."
+#~ msgstr ""
+#~ "Este lanzamiento menor corrige algunos fallos y mejora la accesibilidad "
+#~ "con el teclado."
+
+#~ msgid "Initial version."
+#~ msgstr "Versión inicial."
 
 #~ msgid "Open File…"
 #~ msgstr "Abrir archivo…"

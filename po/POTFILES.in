@@ -14,3 +14,5 @@ data/resources/blueprints/video-preview.blp
 src/main.rs
 src/window.rs
 src/profiles.rs
+src/adjustments.rs
+src/segments.rs
