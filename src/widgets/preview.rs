@@ -588,7 +588,7 @@ impl VideoPreview {
             log::warn!("gamma is unavailable; colour adjustments will not preview");
             return;
         };
-        let sharpness = ges::Effect::new("gaussianblur sigma=0").ok();
+        let sharpness = ges::Effect::new(ColorAdjustments::GST_SHARPEN_EFFECT).ok();
         if sharpness.is_none() {
             log::warn!("gaussianblur is unavailable; sharpness will not preview");
         }
@@ -879,7 +879,7 @@ impl VideoPreview {
                     clip.add_top_effect(&gamma, 0).ok();
                 }
                 if adjustments.sharpness >= 0.0005 {
-                    if let Ok(sharpness) = ges::Effect::new("gaussianblur sigma=0") {
+                    if let Ok(sharpness) = ges::Effect::new(ColorAdjustments::GST_SHARPEN_EFFECT) {
                         set_child_property_f64(
                             &sharpness,
                             "sigma",

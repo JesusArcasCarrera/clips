@@ -31,6 +31,15 @@ impl Default for ColorAdjustments {
 }
 
 impl ColorAdjustments {
+    /// GES effect used for live sharpness and its fallback renderer.
+    ///
+    /// `gaussianblur` only accepts AYUV. Leaving the conversion implicit can make
+    /// GES negotiate decoder-specific buffers all the way into the effect; VP8/VP9
+    /// WebM streams are particularly prone to producing corrupted preview frames.
+    /// The explicit caps also bring hardware-decoded frames back into system memory.
+    pub const GST_SHARPEN_EFFECT: &'static str =
+        "videoconvert ! video/x-raw,format=AYUV ! gaussianblur sigma=0 ! videoconvert";
+
     /// The identity adjustment: every knob at its no-op position.
     pub const NEUTRAL: Self = Self {
         brightness: 0.0,
@@ -262,5 +271,6 @@ mod tests {
             .iter()
             .any(|filter| filter.starts_with("unsharp=")));
         assert!(adjusted.gst_sharpen_sigma() < 0.0);
+        assert!(ColorAdjustments::GST_SHARPEN_EFFECT.contains("format=AYUV"));
     }
 }
