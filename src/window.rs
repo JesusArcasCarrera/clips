@@ -65,6 +65,10 @@ mod imp {
         #[template_child]
         pub open_result: TemplateChild<gtk::Button>,
         #[template_child]
+        pub reveal_result: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub edit_result: TemplateChild<gtk::Button>,
+        #[template_child]
         pub container_row: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub video_encoding: TemplateChild<adw::ComboRow>,
@@ -528,11 +532,25 @@ impl AppWindow {
                 this.convert_cancel(false);
             }
         ));
+        imp.edit_result.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.return_to_editing();
+            }
+        ));
         imp.open_result.connect_clicked(clone!(
             #[weak(rename_to=this)]
             self,
             move |_| {
                 this.open_exported_result();
+            }
+        ));
+        imp.reveal_result.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.show_export_folder();
             }
         ));
         for scale in [
@@ -1455,6 +1473,14 @@ impl AppWindow {
         self.update_speed_ui();
     }
 
+    fn return_to_editing(&self) {
+        self.imp()
+            .stack
+            .set_transition_type(gtk::StackTransitionType::None);
+        self.imp().stack.set_visible_child_name("loading");
+        self.imp().video_preview.refresh_ui();
+    }
+
     fn open_exported_result(&self) {
         let Some(path) = self.imp().result_video_path.borrow().clone() else {
             return;
@@ -1479,6 +1505,33 @@ impl AppWindow {
                 .await
             {
                 log::error!("could not open exported file: {err}");
+            }
+        });
+    }
+
+    fn show_export_folder(&self) {
+        let Some(result_path) = self.imp().result_video_path.borrow().clone() else {
+            return;
+        };
+        let folder = if result_path.is_dir() {
+            result_path
+        } else {
+            result_path
+                .parent()
+                .map(PathBuf::from)
+                .unwrap_or(result_path)
+        };
+
+        runtime().spawn(async move {
+            let Ok(directory) = std::fs::File::open(&folder) else {
+                log::error!("could not open export folder: {}", folder.display());
+                return;
+            };
+            if let Err(err) = ashpd::desktop::open_uri::OpenDirectoryRequest::default()
+                .send(&directory.as_fd())
+                .await
+            {
+                log::error!("could not show export folder: {err}");
             }
         });
     }

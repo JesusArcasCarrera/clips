@@ -644,9 +644,34 @@ template $AppWindow : Adw.ApplicationWindow {
             Button open_result {
               valign: center;
               halign: center;
-              label: _("View Result");
+              label: _("Open");
               use-underline: true;
-              width-request: 175;
+              width-request: 220;
+
+              styles [
+                "suggested-action",
+                "pill",
+              ]
+            }
+
+            Button reveal_result {
+              valign: center;
+              halign: center;
+              label: _("Show in Folder");
+              use-underline: true;
+              width-request: 220;
+
+              styles [
+                "pill",
+              ]
+            }
+
+            Button edit_result {
+              valign: center;
+              halign: center;
+              label: _("Back to Editing");
+              use-underline: true;
+              width-request: 220;
 
               styles [
                 "pill",
@@ -658,10 +683,9 @@ template $AppWindow : Adw.ApplicationWindow {
               halign: center;
               label: _("Finish");
               use-underline: true;
-              width-request: 175;
+              width-request: 220;
 
               styles [
-                "suggested-action",
                 "pill",
               ]
             }
