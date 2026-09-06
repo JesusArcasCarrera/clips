@@ -6,6 +6,9 @@ mod info;
 mod orientation;
 mod profiles;
 mod segments;
+// Backend milestone: consumers arrive with the compact subtitle-track UI.
+#[allow(dead_code)]
+mod subtitles;
 mod widgets;
 mod window;
 

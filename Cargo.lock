@@ -306,6 +306,7 @@ dependencies = [
  "once_cell",
  "ordered-float",
  "pretty_env_logger",
+ "thiserror",
  "tokio",
  "url",
 ]
