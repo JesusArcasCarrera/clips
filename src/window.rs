@@ -9,10 +9,10 @@ use itertools::Itertools;
 
 use crate::{
     adjustments::{ColorAdjustments, PlaybackSpeed, Repeat, RepeatMode},
-    info::{Dimensions, Framerate},
+    info::{get_duration_ms, get_info, Dimensions, Framerate},
     profiles::{AudioEncoding, ContainerFormat, OutputFormat, Quality, VideoEncoding},
     runtime,
-    segments::{ClipRange, SegmentExportMode},
+    segments::{ClipRange, ClipSegment, SegmentExportMode},
     spawn, Listable,
 };
 
@@ -141,6 +141,12 @@ mod imp {
         #[template_child]
         pub add_segment_button: TemplateChild<gtk::Button>,
         #[template_child]
+        pub add_source_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub move_segment_up_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub move_segment_down_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub remove_segment_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub segment_export_mode: TemplateChild<adw::ComboRow>,
@@ -152,7 +158,7 @@ mod imp {
         pub selected_video_dimensions: Cell<Option<Dimensions<u32>>>,
         pub selected_video_path: RefCell<Option<PathBuf>>,
         pub result_video_path: RefCell<Option<PathBuf>>,
-        pub segments: RefCell<Vec<ClipRange>>,
+        pub segments: RefCell<Vec<ClipSegment>>,
         pub active_segment: Cell<usize>,
         pub updating_segments: Cell<bool>,
         #[derivative(Default(value = "Cell::new(true)"))]
@@ -624,6 +630,29 @@ impl AppWindow {
                 this.add_segment_at_playhead();
             }
         ));
+        imp.add_source_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                spawn!(async move {
+                    this.add_source_dialog().await;
+                });
+            }
+        ));
+        imp.move_segment_up_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.move_active_segment(-1);
+            }
+        ));
+        imp.move_segment_down_button.connect_clicked(clone!(
+            #[weak(rename_to=this)]
+            self,
+            move |_| {
+                this.move_active_segment(1);
+            }
+        ));
         imp.remove_segment_button.connect_clicked(clone!(
             #[weak(rename_to=this)]
             self,
@@ -1043,17 +1072,83 @@ impl AppWindow {
         let model = gio::ListStore::new::<gtk::FileFilter>();
         model.append(&filter);
 
-        if let Ok(file) = gtk::FileDialog::builder()
+        if let Ok(files) = gtk::FileDialog::builder()
             .modal(true)
             .filters(&model)
             .build()
-            .open_future(Some(self))
+            .open_multiple_future(Some(self))
             .await
         {
-            let path = file.path().unwrap();
-
-            self.open_file(path).await;
+            let paths = file_paths(&files);
+            self.open_files(paths).await;
         }
+    }
+
+    async fn add_source_dialog(&self) {
+        let filter = gtk::FileFilter::new();
+        filter.add_mime_type("video/*");
+        filter.set_name(Some(&gettext("Video Files")));
+        let model = gio::ListStore::new::<gtk::FileFilter>();
+        model.append(&filter);
+
+        if let Ok(files) = gtk::FileDialog::builder()
+            .modal(true)
+            .title(gettext("Add Video Sources"))
+            .filters(&model)
+            .build()
+            .open_multiple_future(Some(self))
+            .await
+        {
+            for path in file_paths(&files) {
+                self.append_source(path).await;
+            }
+        }
+    }
+
+    async fn append_source(&self, path: PathBuf) {
+        let Some(duration_ms) = get_duration_ms(&path) else {
+            log::warn!(
+                "ignoring source without a readable duration: {}",
+                path.display()
+            );
+            return;
+        };
+        if get_info(path.to_string_lossy().into_owned()).is_none() {
+            log::warn!(
+                "ignoring source without a readable video stream: {}",
+                path.display()
+            );
+            return;
+        }
+
+        self.imp()
+            .segments
+            .borrow_mut()
+            .push(ClipSegment::new(path, 0, duration_ms));
+        self.refresh_sequence_preview().await;
+        self.update_segments_ui();
+    }
+
+    async fn refresh_sequence_preview(&self) {
+        let segments = self.imp().segments.borrow().clone();
+        if segments.is_empty() {
+            return;
+        }
+        if self
+            .imp()
+            .video_preview
+            .load_sequence(&segments)
+            .await
+            .is_err()
+        {
+            log::warn!("could not load the complete clip sequence for preview");
+        }
+        let active = self
+            .imp()
+            .active_segment
+            .get()
+            .min(segments.len().saturating_sub(1));
+        self.imp().video_preview.set_active_segment(active);
     }
 
     async fn save_dialog(&self) {
@@ -1187,9 +1282,15 @@ impl AppWindow {
     }
 
     fn reset_segments(&self, duration_ms: u64) {
+        let source = self
+            .imp()
+            .selected_video_path
+            .borrow()
+            .clone()
+            .unwrap_or_default();
         self.imp()
             .segments
-            .replace(vec![ClipRange::new(0, duration_ms)]);
+            .replace(vec![ClipSegment::new(source, 0, duration_ms)]);
         self.imp().active_segment.set(0);
         self.update_segments_ui();
     }
@@ -1197,8 +1298,8 @@ impl AppWindow {
     fn update_active_segment(&self, start_ms: u64, end_ms: u64) {
         let imp = self.imp();
         let active = imp.active_segment.get();
-        if let Some(range) = imp.segments.borrow_mut().get_mut(active) {
-            *range = ClipRange::new(start_ms, end_ms);
+        if let Some(segment) = imp.segments.borrow_mut().get_mut(active) {
+            segment.range = ClipRange::new(start_ms, end_ms);
         }
         self.update_segments_ui();
     }
@@ -1223,11 +1324,19 @@ impl AppWindow {
 
         let index = {
             let mut segments = self.imp().segments.borrow_mut();
-            segments.push(ClipRange::new(start, end));
+            let source = segments
+                .first()
+                .map(|segment| segment.source.clone())
+                .unwrap_or_default();
+            segments.push(ClipSegment::new(source, start, end));
             segments.len() - 1
         };
         self.select_segment(index);
         self.update_segments_ui();
+        let this = self.clone();
+        spawn!(async move {
+            this.refresh_sequence_preview().await;
+        });
     }
 
     fn remove_active_segment(&self) {
@@ -1241,24 +1350,51 @@ impl AppWindow {
         let next = index.min(imp.segments.borrow().len() - 1);
         self.select_segment(next);
         self.update_segments_ui();
+        let this = self.clone();
+        spawn!(async move {
+            this.refresh_sequence_preview().await;
+        });
+    }
+
+    fn move_active_segment(&self, direction: isize) {
+        let mut segments = self.imp().segments.borrow_mut();
+        let index = self.imp().active_segment.get();
+        let target = index as isize + direction;
+        if target < 0 || target as usize >= segments.len() {
+            return;
+        }
+        segments.swap(index, target as usize);
+        self.imp().active_segment.set(target as usize);
+        drop(segments);
+        self.update_segments_ui();
+        let this = self.clone();
+        spawn!(async move {
+            this.refresh_sequence_preview().await;
+        });
     }
 
     fn select_segment(&self, index: usize) {
         let imp = self.imp();
-        let range = {
+        let segment = {
             let segments = imp.segments.borrow();
-            segments.get(index).copied()
+            segments.get(index).cloned()
         };
-        let Some(range) = range else {
+        let Some(segment) = segment else {
             return;
         };
 
         imp.active_segment.set(index);
+        imp.video_preview.set_active_segment(index);
         imp.video_preview.pause();
-        imp.timeline.set_range(Some((range.start_ms, range.end_ms)));
-        imp.timeline.set_position(range.start_ms);
-        imp.video_preview.set_range(range.start_ms, range.end_ms);
-        imp.video_preview.seek(range.start_ms);
+        if let Some(duration_ms) = get_duration_ms(segment.source_path()) {
+            imp.timeline.set_duration(duration_ms);
+        }
+        imp.timeline
+            .set_range(Some((segment.range.start_ms, segment.range.end_ms)));
+        imp.timeline.set_position(segment.range.start_ms);
+        imp.video_preview
+            .set_range(segment.range.start_ms, segment.range.end_ms);
+        imp.video_preview.seek(segment.range.start_ms);
 
         imp.updating_segments.set(true);
         if let Some(row) = imp.sections_list.row_at_index(index as i32) {
@@ -1284,9 +1420,14 @@ impl AppWindow {
         while let Some(child) = imp.sections_list.first_child() {
             imp.sections_list.remove(&child);
         }
-        for (index, range) in segments.iter().enumerate() {
+        for (index, segment) in segments.iter().enumerate() {
+            let range = segment.range;
             let row = adw::ActionRow::builder()
-                .title(gettext("Section {}").replace("{}", &(index + 1).to_string()))
+                .title(
+                    gettext("{} · Section {}")
+                        .replacen("{}", segment.source_name(), 1)
+                        .replacen("{}", &(index + 1).to_string(), 1),
+                )
                 .subtitle(
                     gettext("{} – {} · {}")
                         .replacen("{}", &format_duration_ms(range.start_ms), 1)
@@ -1309,8 +1450,12 @@ impl AppWindow {
 
         let multiple = segments.len() > 1;
         let supported = self.multi_segments_supported();
-        let valid = segments.iter().all(|range| range.duration_ms() > 0);
+        let valid = segments.iter().all(|segment| segment.duration_ms() > 0);
         imp.remove_segment_button.set_sensitive(multiple);
+        imp.move_segment_up_button
+            .set_sensitive(multiple && imp.active_segment.get() > 0);
+        imp.move_segment_down_button
+            .set_sensitive(multiple && imp.active_segment.get().saturating_add(1) < segments.len());
         imp.segment_export_mode.set_visible(multiple);
         imp.add_segment_button.set_sensitive(supported);
         imp.add_segment_button.set_tooltip_text(Some(&if supported {
@@ -1393,7 +1538,7 @@ impl AppWindow {
                 .segments
                 .borrow()
                 .iter()
-                .map(|range| range.duration_ms())
+                .map(ClipSegment::duration_ms)
                 .sum::<u64>();
             let slowed_ms = speed.output_duration_ms(source_ms);
             let output_ms = self.selected_repeat().output_duration_ms(slowed_ms);
@@ -1767,6 +1912,7 @@ impl AppWindow {
         self.imp().timeline.set_duration(duration);
         self.imp().timeline.set_range(Some((0, duration)));
         self.reset_segments(duration);
+        self.refresh_sequence_preview().await;
         self.imp().video_dimensions.set(Some(dimensions));
         self.imp().selected_video_dimensions.set(Some(dimensions));
         self.imp().resize_scale_height_value.set_text("100");
@@ -1802,6 +1948,16 @@ impl AppWindow {
         self.imp().stack.set_visible_child_name("loading");
 
         self.create_ui(path).await;
+    }
+
+    pub async fn open_files(&self, paths: Vec<PathBuf>) {
+        let Some(first) = paths.first().cloned() else {
+            return;
+        };
+        self.open_file(first).await;
+        for path in paths.into_iter().skip(1) {
+            self.append_source(path).await;
+        }
     }
 
     fn show_about(&self) {
@@ -1877,4 +2033,12 @@ fn generate_width_from_height(height: u32, image_dim: Dimensions<u32>) -> u32 {
 
 fn generate_height_from_width(width: u32, image_dim: Dimensions<u32>) -> u32 {
     ((width as f64) * (image_dim.height_f64()) / (image_dim.width_f64())).round() as u32
+}
+
+fn file_paths(files: &gio::ListModel) -> Vec<PathBuf> {
+    (0..files.n_items())
+        .filter_map(|index| files.item(index))
+        .filter_map(|item| item.downcast::<gio::File>().ok())
+        .filter_map(|file| file.path())
+        .collect()
 }

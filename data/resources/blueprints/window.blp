@@ -240,6 +240,21 @@ template $AppWindow : Adw.ApplicationWindow {
                           spacing: 8;
                           homogeneous: true;
 
+                          Button add_source_button {
+                            label: _("Add Video");
+                            tooltip-text: _("Add another video source");
+                          }
+
+                          Button move_segment_up_button {
+                            icon-name: "go-up-symbolic";
+                            tooltip-text: _("Move section earlier");
+                          }
+
+                          Button move_segment_down_button {
+                            icon-name: "go-down-symbolic";
+                            tooltip-text: _("Move section later");
+                          }
+
                           Button remove_segment_button {
                             label: _("Remove");
                             tooltip-text: _("Remove Current Section");

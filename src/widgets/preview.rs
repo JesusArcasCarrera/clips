@@ -22,7 +22,7 @@ use crate::{
     info::{get_info, Dimensions, Framerate},
     orientation::VideoOrientation,
     profiles::{ContainerFormat, OutputFormat, Quality, VideoEncoding},
-    segments::{ClipRange, SegmentExportMode},
+    segments::{ClipRange, ClipSegment, SegmentExportMode},
 };
 
 mod imp {
@@ -62,6 +62,9 @@ mod imp {
         pub effects: RefCell<Vec<String>>,
         pub pipeline: RefCell<Option<ges::Pipeline>>,
         pub clip: RefCell<Option<ges::UriClip>>,
+        pub sequence_clips: RefCell<Vec<ges::UriClip>>,
+        pub active_segment: Cell<usize>,
+        pub sequence_segments: RefCell<Vec<ClipSegment>>,
         pub path: RefCell<PathBuf>,
         pub ended: Cell<bool>,
         pub bus_watch: RefCell<Option<BusWatchGuard>>,
@@ -154,6 +157,9 @@ impl VideoPreview {
             }
         }
         self.imp().clip.replace(None);
+        self.imp().sequence_clips.replace(vec![]);
+        self.imp().sequence_segments.replace(vec![]);
+        self.imp().active_segment.set(0);
         self.imp().path.replace(PathBuf::new());
         self.imp().ended.replace(false);
         self.imp().bus_watch.replace(None);
@@ -186,7 +192,10 @@ impl VideoPreview {
             .unwrap();
 
         let duration = clip.duration().mseconds();
+        self.imp().sequence_clips.replace(vec![clip.clone()]);
         self.imp().clip.replace(Some(clip));
+        self.imp().sequence_segments.replace(vec![]);
+        self.imp().active_segment.set(0);
 
         self.imp().inpoint.set(0);
         self.imp().outpoint.set(duration);
@@ -221,6 +230,68 @@ impl VideoPreview {
         Ok((dimensions, duration, framerate, has_audio))
     }
 
+    /// Load all sources into one GES timeline.  The sequence remains a single
+    /// layer with no overlaps; each clip keeps its source inpoint and duration.
+    pub async fn load_sequence(&self, segments: &[ClipSegment]) -> Result<(), ()> {
+        if segments.is_empty() {
+            return Err(());
+        }
+
+        let mut clips = Vec::with_capacity(segments.len());
+        let mut offset_ms = 0;
+        for segment in segments {
+            let uri = url::Url::from_file_path(segment.source_path())
+                .map_err(|_| ())?
+                .to_string();
+            let clip = self
+                .load_ges_clip(&uri)
+                .await
+                .map_err(|_| ())?
+                .extract()
+                .map_err(|_| ())?
+                .dynamic_cast::<ges::UriClip>()
+                .map_err(|_| ())?;
+            clip.set_inpoint(ClockTime::from_mseconds(segment.range.start_ms));
+            clip.set_duration(Some(ClockTime::from_mseconds(segment.duration_ms())));
+            clip.set_start(ClockTime::from_mseconds(offset_ms));
+            offset_ms = offset_ms.saturating_add(segment.duration_ms());
+            clips.push(clip);
+        }
+
+        let first = clips.first().cloned().ok_or(())?;
+        let first_segment = segments.first().ok_or(())?;
+        let (dimensions, _framerate, has_audio) =
+            get_info(first_segment.source.to_string_lossy().into_owned()).ok_or(())?;
+
+        self.imp().sequence_clips.replace(clips.clone());
+        self.imp().sequence_segments.replace(segments.to_vec());
+        self.imp().active_segment.set(0);
+        self.imp().clip.replace(Some(first));
+        self.imp().inpoint.set(first_segment.range.start_ms);
+        self.imp().outpoint.set(first_segment.range.end_ms);
+        self.imp().current_dimensions.set(Some(dimensions));
+        self.imp().path.replace(first_segment.source.clone());
+        self.imp().mute.set(!has_audio);
+        self.refresh_ui();
+        Ok(())
+    }
+
+    /// Select the source used by the trim handles while keeping the complete
+    /// sequence alive in the playback pipeline.
+    pub fn set_active_segment(&self, index: usize) {
+        let Some(segment) = self.imp().sequence_segments.borrow().get(index).cloned() else {
+            return;
+        };
+        let Some(clip) = self.imp().sequence_clips.borrow().get(index).cloned() else {
+            return;
+        };
+        self.imp().active_segment.set(index);
+        self.imp().clip.replace(Some(clip));
+        self.imp().path.replace(segment.source);
+        self.imp().inpoint.set(segment.range.start_ms);
+        self.imp().outpoint.set(segment.range.end_ms);
+    }
+
     pub fn seek(&self, position: u64) {
         self.pause();
 
@@ -247,11 +318,18 @@ impl VideoPreview {
 
     fn seek_timeline_position(&self, position_ms: u64) {
         if let Some(pipeline) = self.imp().pipeline.borrow().as_ref() {
+            let sequence_offset = self
+                .imp()
+                .sequence_clips
+                .borrow()
+                .get(self.imp().active_segment.get())
+                .map(|clip| clip.start().mseconds())
+                .unwrap_or(0);
             if let Err(err) = pipeline.seek(
                 self.playback_rate(),
                 SeekFlags::FLUSH | SeekFlags::ACCURATE,
                 gst::SeekType::Set,
-                ClockTime::from_mseconds(position_ms),
+                ClockTime::from_mseconds(sequence_offset.saturating_add(position_ms)),
                 gst::SeekType::None,
                 ClockTime::NONE,
             ) {
@@ -292,11 +370,16 @@ impl VideoPreview {
             );
         }
 
-        let original_clip = self.imp().clip.borrow();
-        let clip = original_clip.as_ref().unwrap();
-
         let layer = timeline.append_layer();
-        layer.add_clip(clip).unwrap();
+        let sequence_clips = self.imp().sequence_clips.borrow();
+        if sequence_clips.is_empty() {
+            let clip = self.imp().clip.borrow();
+            layer.add_clip(clip.as_ref().unwrap()).unwrap();
+        } else {
+            for clip in sequence_clips.iter() {
+                layer.add_clip(clip).unwrap();
+            }
+        }
 
         let pipeline = ges::Pipeline::new();
         pipeline.set_timeline(&timeline).unwrap();
@@ -391,7 +474,25 @@ impl VideoPreview {
                         this.emit_by_name::<()>("preview-ready", &[]);
                     }
                     if this.is_playing() {
-                        this.emit_by_name::<()>("set-position", &[&(p + this.imp().inpoint.get())]);
+                        let offset = this
+                            .imp()
+                            .sequence_clips
+                            .borrow()
+                            .get(this.imp().active_segment.get())
+                            .map(|clip| clip.start().mseconds())
+                            .unwrap_or(0);
+                        let active_end = offset.saturating_add(
+                            this.imp()
+                                .outpoint
+                                .get()
+                                .saturating_sub(this.imp().inpoint.get()),
+                        );
+                        if p >= offset && p <= active_end {
+                            this.emit_by_name::<()>(
+                                "set-position",
+                                &[&(p.saturating_sub(offset) + this.imp().inpoint.get())],
+                            );
+                        }
                     }
                 }
             }
@@ -441,6 +542,19 @@ impl VideoPreview {
             clip.set_duration(Some(ClockTime::from_mseconds(end - start)));
             self.imp().inpoint.set(start);
             self.imp().outpoint.set(end);
+        }
+        if let Some(segment) = self
+            .imp()
+            .sequence_segments
+            .borrow_mut()
+            .get_mut(self.imp().active_segment.get())
+        {
+            segment.range = ClipRange::new(start, end);
+        }
+        let mut offset_ms = 0;
+        for clip in self.imp().sequence_clips.borrow().iter() {
+            clip.set_start(ClockTime::from_mseconds(offset_ms));
+            offset_ms = offset_ms.saturating_add(clip.duration().mseconds());
         }
         self.commit();
     }
@@ -729,7 +843,7 @@ impl VideoPreview {
         prefer_gpu: bool,
         repeat: Repeat,
         speed: PlaybackSpeed,
-        segments: Vec<ClipRange>,
+        segments: Vec<ClipSegment>,
         segment_export_mode: SegmentExportMode,
         running_flag: Arc<AtomicBool>,
     ) {
@@ -768,7 +882,6 @@ impl VideoPreview {
         if Self::ffmpeg_can_handle(&output_format) {
             if segments.len() > 1 {
                 Self::save_ffmpeg_segments(
-                    input_path,
                     output_path,
                     output_format,
                     framerate,
@@ -788,9 +901,14 @@ impl VideoPreview {
                 return;
             }
 
-            let range = segments.first().copied().unwrap_or_else(|| {
-                ClipRange::new(inpoint.mseconds(), inpoint.mseconds() + duration.mseconds())
+            let segment = segments.first().cloned().unwrap_or_else(|| {
+                let path = input_path.clone();
+                ClipSegment::from_range(
+                    path,
+                    ClipRange::new(inpoint.mseconds(), inpoint.mseconds() + duration.mseconds()),
+                )
             });
+            let range = segment.range;
             Self::save_ffmpeg(
                 input_path,
                 output_path,
@@ -1199,7 +1317,6 @@ impl VideoPreview {
     /// parts by stream copy; separate exports write one safely named file per range.
     #[allow(clippy::too_many_arguments)]
     fn save_ffmpeg_segments(
-        input_path: PathBuf,
         output_target: PathBuf,
         output_format: OutputFormat,
         framerate: Framerate,
@@ -1211,7 +1328,7 @@ impl VideoPreview {
         prefer_gpu: bool,
         adjustments: ColorAdjustments,
         speed: PlaybackSpeed,
-        segments: Vec<ClipRange>,
+        segments: Vec<ClipSegment>,
         export_mode: SegmentExportMode,
         sender: async_channel::Sender<Result<(u64, u64), ()>>,
         running_flag: Arc<AtomicBool>,
@@ -1219,22 +1336,13 @@ impl VideoPreview {
         std::thread::spawn(move || {
             let segments = segments
                 .into_iter()
-                .filter(|range| range.duration_ms() > 0)
+                .filter(|segment| segment.duration_ms() > 0)
                 .collect::<Vec<_>>();
             if segments.is_empty() {
                 let _ = sender.send_blocking(Err(()));
                 return;
             }
 
-            let filters = ffmpeg_filter_chain(
-                oriented,
-                crop,
-                scaled,
-                orientation,
-                adjustments,
-                speed,
-                framerate,
-            );
             let video_encoding = output_format.video_encoding.unwrap();
             let (software, hardware) = video_encoding.ffmpeg_encoders();
             let encoder = if prefer_gpu {
@@ -1253,12 +1361,8 @@ impl VideoPreview {
                     .map(|audio| audio.ffmpeg_codec())
             };
             let ext = output_format.container_format.extension().to_owned();
-            let source_ms = speed.output_duration_ms(
-                segments
-                    .iter()
-                    .map(|range| range.duration_ms())
-                    .sum::<u64>(),
-            );
+            let source_ms = speed
+                .output_duration_ms(segments.iter().map(ClipSegment::duration_ms).sum::<u64>());
             let concat_ms = if export_mode == SegmentExportMode::Join {
                 source_ms / 10 + 1
             } else {
@@ -1276,13 +1380,33 @@ impl VideoPreview {
                 encoder
             );
 
-            for (index, range) in segments.iter().enumerate() {
+            for (index, segment) in segments.iter().enumerate() {
+                let range = segment.range;
+                let source_dimensions = get_info(segment.source.to_string_lossy().into_owned())
+                    .map(|(dimensions, _, _)| {
+                        let dimensions: Dimensions<f64> = dimensions.into();
+                        if orientation.is_width_height_swapped() {
+                            dimensions.swap()
+                        } else {
+                            dimensions
+                        }
+                    })
+                    .unwrap_or(oriented);
+                let filters = ffmpeg_filter_chain(
+                    source_dimensions,
+                    crop,
+                    scaled,
+                    orientation,
+                    adjustments,
+                    speed,
+                    framerate,
+                );
                 let part_path = match export_mode {
                     SegmentExportMode::Join => {
                         temps.reserve(&output_target, &format!("section-{index}"), &ext)
                     }
                     SegmentExportMode::Separate => {
-                        unique_segment_path(&output_target, &input_path, index, &ext)
+                        unique_segment_path(&output_target, segment.source_path(), index, &ext)
                     }
                 };
 
@@ -1293,7 +1417,11 @@ impl VideoPreview {
                     "-t",
                     &format!("{:.3}", range.duration_ms() as f64 / 1000.0),
                 ]);
-                cmd.arg("-i").arg(&input_path);
+                cmd.arg("-i").arg(segment.source_path());
+                cmd.args(["-map", "0:v:0"]);
+                if audio_codec.is_some() {
+                    cmd.args(["-map", "0:a:0?"]);
+                }
                 cmd.args(["-vf", &filters.join(",")]);
                 cmd.arg("-c:v").arg(encoder);
                 cmd.args(&quality_args);
@@ -1366,6 +1494,7 @@ impl VideoPreview {
                 let mut cmd = ffmpeg_base();
                 cmd.args(["-f", "concat", "-safe", "0"]);
                 cmd.arg("-i").arg(&list_path);
+                cmd.args(["-map", "0:v:0", "-map", "0:a:0?"]);
                 cmd.arg("-c:v").arg(encoder);
                 cmd.args(&quality_args);
                 match audio_codec {

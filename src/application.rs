@@ -73,16 +73,19 @@ mod imp {
         }
 
         fn open(&self, files: &[gio::File], _hint: &str) {
-            if let Some(file) = files.first() {
+            let paths = files
+                .iter()
+                .filter_map(|file| file.path())
+                .collect::<Vec<_>>();
+            if !paths.is_empty() {
                 let application = self.obj();
                 application.present_main_window();
                 if let Some(window) = application.active_window() {
-                    let file_path = file.path().unwrap();
                     spawn!(async move {
                         window
                             .downcast_ref::<AppWindow>()
                             .unwrap()
-                            .open_file(file_path)
+                            .open_files(paths)
                             .await;
                     });
                 }
