@@ -611,6 +611,16 @@ template $AppWindow : Adw.ApplicationWindow {
                               icon-name: "power-profile-performance-symbolic";
                             }
                           }
+                          Adw.ActionRow export_method_row {
+                            title: _("Export method");
+                            subtitle: _("Recoding");
+                            styles ["property"]
+
+                            [prefix]
+                            Image export_method_icon {
+                              icon-name: "package-x-generic-symbolic";
+                            }
+                          }
                         }
 
                         Button save_button {

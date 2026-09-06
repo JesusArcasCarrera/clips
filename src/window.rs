@@ -13,7 +13,9 @@ use crate::{
     profiles::{AudioEncoding, ContainerFormat, OutputFormat, Quality, VideoEncoding},
     runtime,
     segments::{ClipRange, ClipSegment, SegmentExportMode},
-    spawn, Listable,
+    spawn,
+    widgets::preview::VideoPreview,
+    Listable,
 };
 
 mod imp {
@@ -84,6 +86,10 @@ mod imp {
         pub encoder_status_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub encoder_status_icon: TemplateChild<gtk::Image>,
+        #[template_child]
+        pub export_method_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub export_method_icon: TemplateChild<gtk::Image>,
         // #[template_child]
         // pub link_axis: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -487,6 +493,7 @@ impl AppWindow {
                     } else {
                         this.imp().video_preview.unmute();
                     }
+                    this.update_export_method_status();
                 }
             }
         ));
@@ -710,6 +717,7 @@ impl AppWindow {
                     }
                     _ => unreachable!(),
                 }
+                this.update_export_method_status();
             }
         ));
         imp.enhance_quality_row.connect_active_notify(clone!(
@@ -724,6 +732,7 @@ impl AppWindow {
             self,
             move |_| {
                 this.update_height_from_width();
+                this.update_export_method_status();
             }
         ));
         imp.resize_height_value.connect_changed(clone!(
@@ -731,6 +740,7 @@ impl AppWindow {
             self,
             move |_| {
                 this.update_width_from_height();
+                this.update_export_method_status();
             }
         ));
 
@@ -754,6 +764,7 @@ impl AppWindow {
                 if old_value != new_value && !new_value.is_empty() {
                     this.imp().resize_scale_width_value.set_text(&new_value);
                 }
+                this.update_export_method_status();
                 // }
             }
         ));
@@ -778,6 +789,7 @@ impl AppWindow {
                 if old_value != new_value && !new_value.is_empty() {
                     this.imp().resize_scale_height_value.set_text(&new_value);
                 }
+                this.update_export_method_status();
                 // }
             }
         ));
@@ -852,6 +864,7 @@ impl AppWindow {
                             .video_dimensions
                             .set(Some(video_dimensions.swap()));
                     }
+                    this.update_export_method_status();
                     None
                 }
             ),
@@ -1209,6 +1222,87 @@ impl AppWindow {
         }
     }
 
+    fn selected_framerate(&self) -> Framerate {
+        let f = Ratio::<i32>::approximate_float(self.imp().framerate_row.value());
+        match f {
+            Some(r) => Framerate {
+                nominator: *r.numer() as u32,
+                denominator: *r.denom() as u32,
+            },
+            _ => Framerate {
+                nominator: 30,
+                denominator: 1,
+            },
+        }
+    }
+
+    fn selected_scaled_dimensions(&self) -> Option<Dimensions<u32>> {
+        let imp = self.imp();
+        if imp.enhance_quality_row.is_active() {
+            let dimensions = imp.selected_video_dimensions.get()?;
+            return Some(dimensions);
+        }
+
+        match imp.resize_type.selected() {
+            0 => {
+                let sw = imp.resize_scale_width_value.text().parse::<u32>().ok()?;
+                let sh = imp.resize_scale_height_value.text().parse::<u32>().ok()?;
+                let dimensions = imp.selected_video_dimensions.get()?;
+                Some(Dimensions {
+                    width: dimensions.width * sw / 100 / 2 * 2,
+                    height: dimensions.height * sh / 100 / 2 * 2,
+                })
+            }
+            1 => Some(Dimensions {
+                width: imp.resize_width_value.text().parse::<u32>().ok()? / 2 * 2,
+                height: imp.resize_height_value.text().parse::<u32>().ok()? / 2 * 2,
+            }),
+            _ => None,
+        }
+    }
+
+    fn update_export_method_status(&self) {
+        let imp = self.imp();
+        let output_format = OutputFormat {
+            container_format: self.selected_container(),
+            video_encoding: self.selected_video_encoding(),
+            audio_encoding: self.selected_audio_encoding(),
+            quality: Quality::from_index(imp.quality_row.selected()),
+        };
+        let Some(scaled) = self.selected_scaled_dimensions() else {
+            imp.export_method_row
+                .set_subtitle("Recoding · output size unavailable");
+            imp.export_method_icon
+                .set_icon_name(Some("document-edit-symbolic"));
+            return;
+        };
+        let reason = VideoPreview::stream_copy_reason(
+            &output_format,
+            self.selected_framerate(),
+            scaled,
+            imp.video_preview.imp().orientation.get(),
+            imp.video_preview.imp().crop_box.proportions(),
+            imp.video_preview.imp().mute.get(),
+            self.selected_repeat(),
+            self.selected_playback_speed(),
+            &imp.segments.borrow(),
+        );
+        match reason {
+            Ok(()) => {
+                imp.export_method_row
+                    .set_subtitle("Repackaging · stream copy; cuts on keyframes");
+                imp.export_method_icon
+                    .set_icon_name(Some("package-x-generic-symbolic"));
+            }
+            Err(reason) => {
+                imp.export_method_row
+                    .set_subtitle(&format!("Recoding · {reason}"));
+                imp.export_method_icon
+                    .set_icon_name(Some("document-edit-symbolic"));
+            }
+        }
+    }
+
     /// The colour correction currently dialled in on the sliders.
     fn color_adjustments(&self) -> ColorAdjustments {
         let imp = self.imp();
@@ -1235,6 +1329,7 @@ impl AppWindow {
             });
 
         self.imp().video_preview.set_color_adjustments(adjustments);
+        self.update_export_method_status();
     }
 
     fn reset_color_adjustments(&self) {
@@ -1486,6 +1581,7 @@ impl AppWindow {
 
         drop(segments);
         self.update_repeat_ui();
+        self.update_export_method_status();
     }
 
     /// Whether the selected container can be exported through the ffmpeg render path,
@@ -1545,6 +1641,7 @@ impl AppWindow {
             gettext("Resulting length: {}").replace("{}", &format_duration_ms(output_ms))
         };
         imp.speed_row.set_subtitle(&subtitle);
+        self.update_export_method_status();
     }
 
     /// Keeps the repeat rows in sync: the cycle count only matters when a mode is
@@ -1567,6 +1664,7 @@ impl AppWindow {
         imp.repeat_count_row.set_visible(active);
 
         if !active {
+            self.update_export_method_status();
             return;
         }
 
@@ -1585,6 +1683,7 @@ impl AppWindow {
                 "{}",
                 &format_duration_ms(repeat.output_duration_ms(selection_ms)),
             ));
+        self.update_export_method_status();
     }
 
     fn update_options(&self) {
@@ -1616,6 +1715,7 @@ impl AppWindow {
         self.update_segments_ui();
         self.update_enhance_quality_ui();
         self.update_speed_ui();
+        self.update_export_method_status();
     }
 
     fn return_to_editing(&self) {

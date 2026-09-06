@@ -258,7 +258,7 @@ impl Quality {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputFormat {
     pub container_format: ContainerFormat,
     pub video_encoding: Option<VideoEncoding>,

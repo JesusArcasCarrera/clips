@@ -126,6 +126,34 @@ pub struct VideoPreview(ObjectSubclass<imp::VideoPreview>)
     @implements gio::ActionMap, gio::ActionGroup, gtk::Root, gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
+/// An already-probed copy export. `audio` means every input has the same
+/// compatible first audio stream and it should be mapped to the output.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StreamCopyPlan {
+    audio: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AudioProbe {
+    codec: String,
+    sample_rate: String,
+    channels: String,
+    layout: String,
+}
+
+#[derive(Debug, Clone)]
+struct MediaProbe {
+    format: String,
+    video_codec: String,
+    width: u32,
+    height: u32,
+    fps_n: u32,
+    fps_d: u32,
+    audio: Option<AudioProbe>,
+    duration_ms: u64,
+    keyframes_ms: Vec<u64>,
+}
+
 impl Default for VideoPreview {
     fn default() -> Self {
         Self::new()
@@ -877,6 +905,41 @@ impl VideoPreview {
         let inpoint = self.imp().clip.borrow().as_ref().unwrap().inpoint();
         let duration = self.imp().clip.borrow().as_ref().unwrap().duration();
 
+        // Repackage compatible streams without decoding.  The probe is deliberately
+        // strict: mixed stream layouts, non-keyframe cuts and any visual/audio
+        // transform go through the established render path below.
+        if let Ok(plan) = Self::stream_copy_plan(
+            &output_format,
+            framerate,
+            scaled_dimension,
+            orientation,
+            (top, right, bottom, left),
+            mute,
+            repeat,
+            speed,
+            &segments,
+        ) {
+            Self::save_ffmpeg_copy(
+                output_path,
+                output_format,
+                plan,
+                framerate,
+                dimensions,
+                (top, right, bottom, left),
+                scaled_dimension,
+                orientation,
+                mute,
+                prefer_gpu,
+                adjustments,
+                speed,
+                segments,
+                segment_export_mode,
+                sender,
+                running_flag,
+            );
+            return;
+        }
+
         // Fast path: render with ffmpeg (NVENC + libplacebo). GES stays as fallback
         // for the cases ffmpeg doesn't cover here (GIF, "keep as-is").
         if Self::ffmpeg_can_handle(&output_format) {
@@ -1311,6 +1374,478 @@ impl VideoPreview {
             output_format.video_encoding,
             Some(VideoEncoding::Gif) | None
         )
+    }
+
+    /// Probe the inputs before choosing the lossless path.  Keeping this decision
+    /// in one function lets the export worker and the UI indicator report the same
+    /// answer and, importantly, keeps mixed audio sources on the normaliser path.
+    pub(crate) fn stream_copy_reason(
+        output_format: &OutputFormat,
+        framerate: Framerate,
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        crop: (f64, f64, f64, f64),
+        mute: bool,
+        repeat: Repeat,
+        speed: PlaybackSpeed,
+        segments: &[ClipSegment],
+    ) -> Result<(), &'static str> {
+        Self::stream_copy_plan(
+            output_format,
+            framerate,
+            scaled,
+            orientation,
+            crop,
+            mute,
+            repeat,
+            speed,
+            segments,
+        )
+        .map(|_| ())
+    }
+
+    fn stream_copy_plan(
+        output_format: &OutputFormat,
+        framerate: Framerate,
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        crop: (f64, f64, f64, f64),
+        mute: bool,
+        repeat: Repeat,
+        speed: PlaybackSpeed,
+        segments: &[ClipSegment],
+    ) -> Result<StreamCopyPlan, &'static str> {
+        if segments.is_empty() {
+            return Err("no sections selected");
+        }
+        if !Self::ffmpeg_can_handle(output_format) {
+            return Err("the selected container uses the GES renderer");
+        }
+        if output_format.video_encoding.is_none() {
+            return Err("the output video codec is not selectable");
+        }
+        if !Self::orientation_is_identity(orientation) {
+            return Err("orientation changes require recoding");
+        }
+        if crop.0.abs() > 0.001
+            || crop.1.abs() > 0.001
+            || crop.2.abs() > 0.001
+            || crop.3.abs() > 0.001
+        {
+            return Err("cropping requires recoding");
+        }
+        if !speed.is_normal() {
+            return Err("speed changes require recoding");
+        }
+        if !repeat.is_off() {
+            return Err("repetition requires recoding");
+        }
+
+        let probes = segments
+            .iter()
+            .map(|segment| Self::probe_media(&segment.source))
+            .collect::<Result<Vec<_>, _>>()?;
+        let video_codec = output_format.video_encoding.unwrap();
+        let expected_video = Self::video_codec_name(video_codec);
+        let expected_container = Self::output_container_name(output_format.container_format);
+        let first = probes.first().unwrap();
+
+        for (segment, media) in segments.iter().zip(&probes) {
+            if media.video_codec != expected_video {
+                return Err("video codecs are incompatible with stream copy");
+            }
+            if media.width != scaled.width || media.height != scaled.height {
+                return Err("resolution changes require recoding");
+            }
+            if media.fps_n as u64 * framerate.denominator as u64
+                != framerate.nominator as u64 * media.fps_d as u64
+            {
+                return Err("FPS changes require recoding");
+            }
+            if media
+                .format
+                .split(',')
+                .all(|name| !expected_container(name))
+            {
+                return Err("the source container is not compatible with the output");
+            }
+            if !Self::keyframe_aligned(media, segment.range.start_ms, segment.range.end_ms) {
+                return Err("cuts must start and end on video keyframes");
+            }
+        }
+
+        let audio = if mute {
+            false
+        } else {
+            let all_have_audio = probes.iter().all(|media| media.audio.is_some());
+            let none_have_audio = probes.iter().all(|media| media.audio.is_none());
+            if none_have_audio {
+                false
+            } else if !all_have_audio {
+                return Err("mixed audio tracks require normalization");
+            } else {
+                let first_audio = first.audio.as_ref().unwrap();
+                let Some(audio_encoding) = output_format.audio_encoding else {
+                    return Err("the output audio codec is not selectable");
+                };
+                if first_audio.codec != Self::audio_codec_name(audio_encoding)
+                    || probes
+                        .iter()
+                        .any(|media| media.audio.as_ref() != Some(first_audio))
+                {
+                    return Err("audio tracks are incompatible with stream copy");
+                }
+                true
+            }
+        };
+
+        Ok(StreamCopyPlan { audio })
+    }
+
+    fn orientation_is_identity(orientation: VideoOrientation) -> bool {
+        orientation == VideoOrientation::Identity
+    }
+
+    fn video_codec_name(codec: VideoEncoding) -> &'static str {
+        match codec {
+            VideoEncoding::Av1 => "av1",
+            VideoEncoding::Vp8 => "vp8",
+            VideoEncoding::Vp9 => "vp9",
+            VideoEncoding::H264 => "h264",
+            VideoEncoding::H265 => "hevc",
+            VideoEncoding::Gif => "gif",
+        }
+    }
+
+    fn audio_codec_name(codec: crate::profiles::AudioEncoding) -> &'static str {
+        match codec {
+            crate::profiles::AudioEncoding::Aac => "aac",
+            crate::profiles::AudioEncoding::Ac3 => "ac3",
+            crate::profiles::AudioEncoding::Opus => "opus",
+            crate::profiles::AudioEncoding::Vorbis => "vorbis",
+            crate::profiles::AudioEncoding::Flac => "flac",
+        }
+    }
+
+    fn output_container_name(container: ContainerFormat) -> fn(&str) -> bool {
+        match container {
+            ContainerFormat::Mpeg => {
+                |name| matches!(name, "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2")
+            }
+            ContainerFormat::Matroska => |name| name == "matroska",
+            ContainerFormat::WebM | ContainerFormat::Best => |name| name == "webm",
+            ContainerFormat::Same | ContainerFormat::GifContainer => |_| false,
+        }
+    }
+
+    fn probe_media(path: &Path) -> Result<MediaProbe, &'static str> {
+        let video = Self::ffprobe_csv(
+            path,
+            &["-select_streams", "v:0"],
+            "stream=codec_name,width,height,r_frame_rate",
+        )?;
+        let video_fields = video.trim().split('|').collect::<Vec<_>>();
+        if video_fields.len() < 4 {
+            return Err("ffprobe could not read the video stream");
+        }
+        let (fps_n, fps_d) = Self::parse_fraction(video_fields[3]).ok_or("invalid source FPS")?;
+        let audio = Self::ffprobe_csv(
+            path,
+            &["-select_streams", "a:0"],
+            "stream=codec_name,sample_rate,channels,channel_layout",
+        )
+        .ok()
+        .and_then(|value| {
+            let fields = value.trim().split('|').collect::<Vec<_>>();
+            (fields.len() >= 4 && !fields[0].is_empty()).then(|| AudioProbe {
+                codec: fields[0].to_owned(),
+                sample_rate: fields[1].to_owned(),
+                channels: fields[2].to_owned(),
+                layout: fields[3].to_owned(),
+            })
+        });
+        let format = Self::ffprobe_csv(path, &[], "format=format_name")?;
+        let duration_ms = Self::ffprobe_csv(path, &[], "format=duration")
+            .ok()
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map(|value| (value * 1_000.0).round() as u64)
+            .ok_or("invalid source duration")?;
+        let keyframes_ms = Self::ffprobe_keyframes(path)?;
+        Ok(MediaProbe {
+            format,
+            video_codec: video_fields[0].to_owned(),
+            width: video_fields[1]
+                .parse()
+                .map_err(|_| "invalid source width")?,
+            height: video_fields[2]
+                .parse()
+                .map_err(|_| "invalid source height")?,
+            fps_n,
+            fps_d,
+            audio,
+            duration_ms,
+            keyframes_ms,
+        })
+    }
+
+    fn ffprobe_csv(path: &Path, extra: &[&str], entries: &str) -> Result<String, &'static str> {
+        let mut command = Command::new("ffprobe");
+        command.args(["-v", "error"]);
+        command.args(extra);
+        command.args(["-show_entries", entries, "-of", "csv=s=|:p=0"]);
+        let output = command
+            .arg(path)
+            .output()
+            .map_err(|_| "ffprobe is unavailable")?;
+        if !output.status.success() {
+            return Err("ffprobe could not inspect the source");
+        }
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if value.is_empty() {
+            Err("ffprobe returned no stream data")
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn ffprobe_keyframes(path: &Path) -> Result<Vec<u64>, &'static str> {
+        let output = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-skip_frame",
+                "nokey",
+                "-show_entries",
+                "frame=best_effort_timestamp_time",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(path)
+            .output()
+            .map_err(|_| "ffprobe is unavailable")?;
+        if !output.status.success() {
+            return Err("ffprobe could not inspect keyframes");
+        }
+        let values = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim().parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| (value * 1_000.0).round() as u64)
+            .collect::<Vec<_>>();
+        if values.is_empty() {
+            Err("ffprobe found no video keyframes")
+        } else {
+            Ok(values)
+        }
+    }
+
+    fn parse_fraction(value: &str) -> Option<(u32, u32)> {
+        let (numerator, denominator) = value.trim().split_once('/')?;
+        Some((numerator.parse().ok()?, denominator.parse().ok()?))
+    }
+
+    fn keyframe_aligned(media: &MediaProbe, start_ms: u64, end_ms: u64) -> bool {
+        const TOLERANCE_MS: u64 = 4;
+        let nearest = |target: u64| {
+            media
+                .keyframes_ms
+                .iter()
+                .map(|keyframe| keyframe.abs_diff(target))
+                .min()
+                .unwrap_or(u64::MAX)
+        };
+        let start_ok = start_ms == 0 || nearest(start_ms) <= TOLERANCE_MS;
+        let end_ok =
+            end_ms >= media.duration_ms.saturating_sub(50) || nearest(end_ms) <= TOLERANCE_MS;
+        start_ok && end_ok
+    }
+
+    /// Repackage one or more keyframe-aligned ranges.  If a muxer or unusual
+    /// source defeats the preflight, hand the exact same request to the existing
+    /// renderer instead of exposing a failed export to the user.
+    #[allow(clippy::too_many_arguments)]
+    fn save_ffmpeg_copy(
+        output_target: PathBuf,
+        output_format: OutputFormat,
+        plan: StreamCopyPlan,
+        framerate: Framerate,
+        oriented: Dimensions<f64>,
+        crop: (f64, f64, f64, f64),
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        mute: bool,
+        prefer_gpu: bool,
+        adjustments: ColorAdjustments,
+        speed: PlaybackSpeed,
+        segments: Vec<ClipSegment>,
+        export_mode: SegmentExportMode,
+        sender: async_channel::Sender<Result<(u64, u64), ()>>,
+        running_flag: Arc<AtomicBool>,
+    ) {
+        std::thread::spawn(move || {
+            let segments = segments
+                .into_iter()
+                .filter(|segment| segment.duration_ms() > 0)
+                .collect::<Vec<_>>();
+            if segments.is_empty() {
+                let _ = sender.send_blocking(Err(()));
+                return;
+            }
+
+            let total_ms = segments.iter().map(ClipSegment::duration_ms).sum::<u64>();
+            let mut temps = TempFiles::default();
+            let mut parts = Vec::with_capacity(segments.len());
+            let ext = output_format.container_format.extension().to_owned();
+
+            for (index, segment) in segments.iter().enumerate() {
+                let part_path = if export_mode == SegmentExportMode::Join && segments.len() == 1 {
+                    output_target.clone()
+                } else {
+                    match export_mode {
+                        SegmentExportMode::Join => {
+                            temps.reserve(&output_target, &format!("copy-section-{index}"), &ext)
+                        }
+                        SegmentExportMode::Separate => {
+                            unique_segment_path(&output_target, segment.source_path(), index, &ext)
+                        }
+                    }
+                };
+
+                let mut command = ffmpeg_base();
+                command.args([
+                    "-ss",
+                    &format!("{:.3}", segment.range.start_ms as f64 / 1_000.0),
+                ]);
+                command.arg("-i").arg(segment.source_path());
+                command.args([
+                    "-t",
+                    &format!("{:.3}", segment.duration_ms() as f64 / 1_000.0),
+                    "-map",
+                    "0:v:0",
+                ]);
+                if plan.audio {
+                    command.args(["-map", "0:a:0"]);
+                }
+                command.args(["-c", "copy", "-avoid_negative_ts", "make_zero"]);
+                command.arg(&part_path);
+
+                match run_ffmpeg_stage(
+                    &mut command,
+                    segment.duration_ms(),
+                    segments[..index].iter().map(ClipSegment::duration_ms).sum(),
+                    segment.duration_ms(),
+                    total_ms.max(1),
+                    &sender,
+                    &running_flag,
+                ) {
+                    StageOutcome::Done => parts.push(part_path),
+                    StageOutcome::Cancelled => {
+                        let _ = sender.send_blocking(Err(()));
+                        return;
+                    }
+                    StageOutcome::Failed => {
+                        log::warn!("stream copy failed; falling back to recoding");
+                        Self::save_ffmpeg_segments(
+                            output_target.clone(),
+                            output_format.clone(),
+                            framerate,
+                            oriented,
+                            crop,
+                            scaled,
+                            orientation,
+                            mute,
+                            prefer_gpu,
+                            adjustments,
+                            speed,
+                            segments.clone(),
+                            export_mode,
+                            sender.clone(),
+                            running_flag.clone(),
+                        );
+                        return;
+                    }
+                }
+            }
+
+            if export_mode == SegmentExportMode::Separate || parts.len() == 1 {
+                let _ = sender.send_blocking(Ok((total_ms, total_ms)));
+                return;
+            }
+
+            let list_path = temps.reserve(&output_target, "copy-sections", "txt");
+            let list = parts
+                .iter()
+                .map(|part| concat_entry(part))
+                .collect::<String>();
+            if let Err(err) = std::fs::File::create(&list_path)
+                .and_then(|mut file| file.write_all(list.as_bytes()))
+            {
+                log::warn!("could not write copy section list ({err}); falling back to recoding");
+                Self::save_ffmpeg_segments(
+                    output_target,
+                    output_format,
+                    framerate,
+                    oriented,
+                    crop,
+                    scaled,
+                    orientation,
+                    mute,
+                    prefer_gpu,
+                    adjustments,
+                    speed,
+                    segments,
+                    export_mode,
+                    sender,
+                    running_flag,
+                );
+                return;
+            }
+
+            let mut command = ffmpeg_base();
+            command.args(["-f", "concat", "-safe", "0", "-i"]);
+            command.arg(&list_path);
+            command.args(["-c", "copy", "-avoid_negative_ts", "make_zero"]);
+            command.arg(&output_target);
+            match run_ffmpeg_stage(
+                &mut command,
+                total_ms,
+                total_ms.saturating_sub(1),
+                1,
+                total_ms.max(1),
+                &sender,
+                &running_flag,
+            ) {
+                StageOutcome::Done => {
+                    let _ = sender.send_blocking(Ok((total_ms, total_ms)));
+                }
+                StageOutcome::Cancelled => {
+                    let _ = sender.send_blocking(Err(()));
+                }
+                StageOutcome::Failed => {
+                    log::warn!("stream-copy concat failed; falling back to recoding");
+                    Self::save_ffmpeg_segments(
+                        output_target,
+                        output_format,
+                        framerate,
+                        oriented,
+                        crop,
+                        scaled,
+                        orientation,
+                        mute,
+                        prefer_gpu,
+                        adjustments,
+                        speed,
+                        segments,
+                        export_mode,
+                        sender,
+                        running_flag,
+                    );
+                }
+            }
+        });
     }
 
     /// Renders each source range serially. Joined exports concatenate the encoded
