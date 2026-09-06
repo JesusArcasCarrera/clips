@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::segments::ClipRange;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubtitleFormat {
@@ -219,6 +221,117 @@ pub enum SubtitleDiagnostic {
         first_cue_id: u64,
         second_cue_id: u64,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddedSubtitleTrack {
+    pub stream_index: u32,
+    pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
+    pub is_default: bool,
+    pub is_forced: bool,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SubtitleProbeError {
+    #[error("could not run ffprobe: {0}")]
+    Unavailable(#[source] io::Error),
+    #[error("ffprobe failed: {0}")]
+    Failed(String),
+    #[error("ffprobe returned invalid subtitle metadata: {0}")]
+    InvalidOutput(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeOutput {
+    #[serde(default)]
+    streams: Vec<ProbeStream>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeStream {
+    index: u32,
+    #[serde(default)]
+    codec_name: String,
+    #[serde(default)]
+    tags: ProbeTags,
+    #[serde(default)]
+    disposition: ProbeDisposition,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ProbeTags {
+    language: Option<String>,
+    title: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ProbeDisposition {
+    #[serde(default)]
+    default: u8,
+    #[serde(default)]
+    forced: u8,
+}
+
+/// Probes embedded subtitle streams away from GTK's main thread.
+pub async fn probe_embedded_subtitles(
+    video: PathBuf,
+) -> Result<Vec<EmbeddedSubtitleTrack>, SubtitleProbeError> {
+    async_std::task::spawn_blocking(move || probe_embedded_subtitles_blocking(&video)).await
+}
+
+fn probe_embedded_subtitles_blocking(
+    video: &Path,
+) -> Result<Vec<EmbeddedSubtitleTrack>, SubtitleProbeError> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "s",
+            "-show_entries",
+            "stream=index,codec_name:stream_tags=language,title:stream_disposition=default,forced",
+            "-of",
+            "json",
+        ])
+        .arg(video)
+        .output()
+        .map_err(SubtitleProbeError::Unavailable)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(SubtitleProbeError::Failed(if stderr.is_empty() {
+            format!("exit status {}", output.status)
+        } else {
+            stderr
+        }));
+    }
+
+    parse_probe_output(&output.stdout)
+}
+
+fn parse_probe_output(input: &[u8]) -> Result<Vec<EmbeddedSubtitleTrack>, SubtitleProbeError> {
+    let output: ProbeOutput = serde_json::from_slice(input)?;
+    Ok(output
+        .streams
+        .into_iter()
+        .map(|stream| EmbeddedSubtitleTrack {
+            stream_index: stream.index,
+            codec: stream.codec_name,
+            language: normalized_tag(stream.tags.language),
+            title: normalized_tag(stream.tags.title),
+            is_default: stream.disposition.default != 0,
+            is_forced: stream.disposition.forced != 0,
+        })
+        .collect())
+}
+
+fn normalized_tag(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -737,5 +850,51 @@ mod tests {
         );
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn parses_embedded_track_metadata_from_ffprobe() {
+        let tracks = parse_probe_output(
+            r#"{
+                "streams": [
+                    {
+                        "index": 3,
+                        "codec_name": "ass",
+                        "disposition": {"default": 1, "forced": 0},
+                        "tags": {"language": "spa", "title": " Español "}
+                    },
+                    {
+                        "index": 4,
+                        "codec_name": "subrip",
+                        "disposition": {"forced": 1},
+                        "tags": {"language": "eng"}
+                    }
+                ]
+            }"#
+            .as_bytes(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            tracks,
+            vec![
+                EmbeddedSubtitleTrack {
+                    stream_index: 3,
+                    codec: "ass".to_string(),
+                    language: Some("spa".to_string()),
+                    title: Some("Español".to_string()),
+                    is_default: true,
+                    is_forced: false,
+                },
+                EmbeddedSubtitleTrack {
+                    stream_index: 4,
+                    codec: "subrip".to_string(),
+                    language: Some("eng".to_string()),
+                    title: None,
+                    is_default: false,
+                    is_forced: true,
+                },
+            ]
+        );
     }
 }
