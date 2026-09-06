@@ -1360,6 +1360,12 @@ impl VideoPreview {
                     .audio_encoding
                     .map(|audio| audio.ffmpeg_codec())
             };
+            let audio_enabled = audio_codec.is_some()
+                && segments.iter().any(|segment| {
+                    get_info(segment.source.to_string_lossy().into_owned())
+                        .map(|(_, _, has_audio)| has_audio)
+                        .unwrap_or(false)
+                });
             let ext = output_format.container_format.extension().to_owned();
             let source_ms = speed
                 .output_duration_ms(segments.iter().map(ClipSegment::duration_ms).sum::<u64>());
@@ -1418,21 +1424,41 @@ impl VideoPreview {
                     &format!("{:.3}", range.duration_ms() as f64 / 1000.0),
                 ]);
                 cmd.arg("-i").arg(segment.source_path());
+                let source_has_audio = get_info(segment.source.to_string_lossy().into_owned())
+                    .map(|(_, _, has_audio)| has_audio)
+                    .unwrap_or(false);
                 cmd.args(["-map", "0:v:0"]);
-                if audio_codec.is_some() {
-                    cmd.args(["-map", "0:a:0?"]);
+                if audio_enabled {
+                    if source_has_audio {
+                        cmd.args(["-map", "0:a:0"]);
+                    } else {
+                        // Keep every joined part's stream layout identical.  A
+                        // silent source gets a finite audio input; -shortest
+                        // below cuts it to the rendered video duration.
+                        cmd.args([
+                            "-f",
+                            "lavfi",
+                            "-i",
+                            "anullsrc=channel_layout=stereo:sample_rate=48000",
+                            "-map",
+                            "1:a:0",
+                        ]);
+                    }
                 }
                 cmd.args(["-vf", &filters.join(",")]);
                 cmd.arg("-c:v").arg(encoder);
                 cmd.args(&quality_args);
-                match audio_codec {
-                    Some(codec) => {
-                        if let Some(filter) = speed.ffmpeg_audio_filter() {
-                            cmd.args(["-af", filter]);
-                        }
+                match (audio_enabled, audio_codec) {
+                    (true, Some(codec)) => {
+                        let audio_filter = ffmpeg_audio_filter(speed);
+                        cmd.arg("-af").arg(audio_filter);
                         cmd.arg("-c:a").arg(codec);
+                        cmd.args(["-ar", "48000", "-ac", "2", "-shortest"]);
                     }
-                    None => {
+                    (false, _) => {
+                        cmd.arg("-an");
+                    }
+                    (true, None) => {
                         cmd.arg("-an");
                     }
                 }
@@ -2020,6 +2046,18 @@ fn run_ffmpeg_stage(
 /// One line of an ffmpeg concat demuxer list.
 fn concat_entry(path: &Path) -> String {
     format!("file '{}'\n", path.to_string_lossy().replace('\'', "'\\''"))
+}
+
+/// Audio layout shared by every rendered part in a joined sequence.  The
+/// concat demuxer requires matching stream parameters, so normalise real and
+/// synthetic audio before encoding rather than relying on each source's
+/// channel count and sample rate.
+fn ffmpeg_audio_filter(speed: PlaybackSpeed) -> String {
+    let mut filters = vec!["aformat=sample_rates=48000:channel_layouts=stereo".to_owned()];
+    if let Some(filter) = speed.ffmpeg_audio_filter() {
+        filters.push(filter.to_owned());
+    }
+    filters.join(",")
 }
 
 /// Chunk length for the reversed (boomerang) pass. ffmpeg's `reverse` filter buffers
