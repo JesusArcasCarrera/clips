@@ -1,10 +1,11 @@
 use std::{
     cell::RefCell,
+    collections::HashMap,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, OnceLock,
     },
 };
@@ -150,8 +151,7 @@ struct MediaProbe {
     fps_n: u32,
     fps_d: u32,
     audio: Option<AudioProbe>,
-    duration_ms: u64,
-    keyframes_ms: Vec<u64>,
+    start_time_ms: u64,
 }
 
 impl Default for VideoPreview {
@@ -877,6 +877,15 @@ impl VideoPreview {
     ) {
         self.kill();
 
+        // A completed encoder process is not enough to publish an export: muxers
+        // can leave a truncated or undecodable file behind. Single-file exports
+        // are staged beside the destination, verified, then renamed atomically.
+        let (output_path, sender) = if segment_export_mode == SegmentExportMode::Join {
+            atomic_export_channel(output_path, sender)
+        } else {
+            (output_path, sender)
+        };
+
         dbg!(&output_format, &framerate, &scaled_dimension, prefer_gpu);
 
         let adjustments = self.imp().adjustments.get();
@@ -1376,9 +1385,9 @@ impl VideoPreview {
         )
     }
 
-    /// Probe the inputs before choosing the lossless path.  Keeping this decision
-    /// in one function lets the export worker and the UI indicator report the same
-    /// answer and, importantly, keeps mixed audio sources on the normaliser path.
+    /// Cheap part of the stream-copy decision, safe to call from GTK callbacks.
+    /// Media probing deliberately happens later in the export worker: enumerating
+    /// keyframes on a multi-hour source can otherwise freeze the whole interface.
     pub(crate) fn stream_copy_reason(
         output_format: &OutputFormat,
         framerate: Framerate,
@@ -1390,7 +1399,7 @@ impl VideoPreview {
         speed: PlaybackSpeed,
         segments: &[ClipSegment],
     ) -> Result<(), &'static str> {
-        Self::stream_copy_plan(
+        Self::stream_copy_static_reason(
             output_format,
             framerate,
             scaled,
@@ -1401,22 +1410,24 @@ impl VideoPreview {
             speed,
             segments,
         )
-        .map(|_| ())
     }
 
-    fn stream_copy_plan(
+    fn stream_copy_static_reason(
         output_format: &OutputFormat,
-        framerate: Framerate,
-        scaled: Dimensions<u32>,
+        _framerate: Framerate,
+        _scaled: Dimensions<u32>,
         orientation: VideoOrientation,
         crop: (f64, f64, f64, f64),
-        mute: bool,
+        _mute: bool,
         repeat: Repeat,
         speed: PlaybackSpeed,
         segments: &[ClipSegment],
-    ) -> Result<StreamCopyPlan, &'static str> {
+    ) -> Result<(), &'static str> {
         if segments.is_empty() {
             return Err("no sections selected");
+        }
+        if segments.iter().any(|segment| segment.duration_ms() == 0) {
+            return Err("an empty section cannot be exported");
         }
         if !Self::ffmpeg_can_handle(output_format) {
             return Err("the selected container uses the GES renderer");
@@ -1441,10 +1452,42 @@ impl VideoPreview {
             return Err("repetition requires recoding");
         }
 
+        Ok(())
+    }
+
+    fn stream_copy_plan(
+        output_format: &OutputFormat,
+        framerate: Framerate,
+        scaled: Dimensions<u32>,
+        orientation: VideoOrientation,
+        crop: (f64, f64, f64, f64),
+        mute: bool,
+        repeat: Repeat,
+        speed: PlaybackSpeed,
+        segments: &[ClipSegment],
+    ) -> Result<StreamCopyPlan, &'static str> {
+        Self::stream_copy_static_reason(
+            output_format,
+            framerate,
+            scaled,
+            orientation,
+            crop,
+            mute,
+            repeat,
+            speed,
+            segments,
+        )?;
+
+        let mut sources = HashMap::<PathBuf, MediaProbe>::new();
+        for segment in segments {
+            if !sources.contains_key(&segment.source) {
+                sources.insert(segment.source.clone(), Self::probe_media(&segment.source)?);
+            }
+        }
         let probes = segments
             .iter()
-            .map(|segment| Self::probe_media(&segment.source))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|segment| sources.get(&segment.source).expect("probed source"))
+            .collect::<Vec<_>>();
         let video_codec = output_format.video_encoding.unwrap();
         let expected_video = Self::video_codec_name(video_codec);
         let expected_container = Self::output_container_name(output_format.container_format);
@@ -1469,8 +1512,12 @@ impl VideoPreview {
             {
                 return Err("the source container is not compatible with the output");
             }
-            if !Self::keyframe_aligned(media, segment.range.start_ms, segment.range.end_ms) {
-                return Err("cuts must start and end on video keyframes");
+            if !Self::cut_starts_on_keyframe(
+                &segment.source,
+                media.start_time_ms,
+                segment.range.start_ms,
+            )? {
+                return Err("cuts must start on video keyframes");
             }
         }
 
@@ -1542,7 +1589,7 @@ impl VideoPreview {
         let video = Self::ffprobe_csv(
             path,
             &["-select_streams", "v:0"],
-            "stream=codec_name,width,height,r_frame_rate",
+            "stream=codec_name,width,height,r_frame_rate,start_time",
         )?;
         let video_fields = video.trim().split('|').collect::<Vec<_>>();
         if video_fields.len() < 4 {
@@ -1565,13 +1612,12 @@ impl VideoPreview {
             })
         });
         let format = Self::ffprobe_csv(path, &[], "format=format_name")?;
-        let duration_ms = Self::ffprobe_csv(path, &[], "format=duration")
-            .ok()
-            .and_then(|value| value.trim().parse::<f64>().ok())
-            .filter(|value| value.is_finite() && *value > 0.0)
+        let start_time_ms = video_fields
+            .get(4)
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0)
             .map(|value| (value * 1_000.0).round() as u64)
-            .ok_or("invalid source duration")?;
-        let keyframes_ms = Self::ffprobe_keyframes(path)?;
+            .unwrap_or(0);
         Ok(MediaProbe {
             format,
             video_codec: video_fields[0].to_owned(),
@@ -1584,8 +1630,7 @@ impl VideoPreview {
             fps_n,
             fps_d,
             audio,
-            duration_ms,
-            keyframes_ms,
+            start_time_ms,
         })
     }
 
@@ -1609,11 +1654,22 @@ impl VideoPreview {
         }
     }
 
-    fn ffprobe_keyframes(path: &Path) -> Result<Vec<u64>, &'static str> {
+    /// Return the keyframe FFmpeg seeks to immediately before `target_ms`.
+    /// `-read_intervals` keeps this bounded to one GOP instead of decoding the
+    /// complete file, which took tens of seconds on real multi-gigabyte inputs.
+    fn ffprobe_keyframe_before(
+        path: &Path,
+        start_time_ms: u64,
+        target_ms: u64,
+    ) -> Result<u64, &'static str> {
+        let absolute_ms = start_time_ms.saturating_add(target_ms);
+        let interval = format!("{:.6}%+0.250", absolute_ms as f64 / 1_000.0);
         let output = Command::new("ffprobe")
             .args([
                 "-v",
                 "error",
+                "-read_intervals",
+                &interval,
                 "-select_streams",
                 "v:0",
                 "-skip_frame",
@@ -1629,17 +1685,14 @@ impl VideoPreview {
         if !output.status.success() {
             return Err("ffprobe could not inspect keyframes");
         }
-        let values = String::from_utf8_lossy(&output.stdout)
+        let keyframe_ms = String::from_utf8_lossy(&output.stdout)
             .lines()
             .filter_map(|line| line.trim().parse::<f64>().ok())
             .filter(|value| value.is_finite() && *value >= 0.0)
             .map(|value| (value * 1_000.0).round() as u64)
-            .collect::<Vec<_>>();
-        if values.is_empty() {
-            Err("ffprobe found no video keyframes")
-        } else {
-            Ok(values)
-        }
+            .next()
+            .ok_or("ffprobe found no nearby video keyframe")?;
+        Ok(keyframe_ms.saturating_sub(start_time_ms))
     }
 
     fn parse_fraction(value: &str) -> Option<(u32, u32)> {
@@ -1647,20 +1700,21 @@ impl VideoPreview {
         Some((numerator.parse().ok()?, denominator.parse().ok()?))
     }
 
-    fn keyframe_aligned(media: &MediaProbe, start_ms: u64, end_ms: u64) -> bool {
+    fn keyframe_is_aligned(keyframe_ms: u64, target_ms: u64) -> bool {
         const TOLERANCE_MS: u64 = 4;
-        let nearest = |target: u64| {
-            media
-                .keyframes_ms
-                .iter()
-                .map(|keyframe| keyframe.abs_diff(target))
-                .min()
-                .unwrap_or(u64::MAX)
-        };
-        let start_ok = start_ms == 0 || nearest(start_ms) <= TOLERANCE_MS;
-        let end_ok =
-            end_ms >= media.duration_ms.saturating_sub(50) || nearest(end_ms) <= TOLERANCE_MS;
-        start_ok && end_ok
+        keyframe_ms.abs_diff(target_ms) <= TOLERANCE_MS
+    }
+
+    fn cut_starts_on_keyframe(
+        path: &Path,
+        start_time_ms: u64,
+        target_ms: u64,
+    ) -> Result<bool, &'static str> {
+        if target_ms == 0 {
+            return Ok(true);
+        }
+        let keyframe_ms = Self::ffprobe_keyframe_before(path, start_time_ms, target_ms)?;
+        Ok(Self::keyframe_is_aligned(keyframe_ms, target_ms))
     }
 
     /// Repackage one or more keyframe-aligned ranges.  If a muxer or unusual
@@ -2508,6 +2562,125 @@ impl Drop for TempFiles {
     }
 }
 
+/// Stage one output on the destination filesystem and forward progress to GTK.
+/// The completion event is held back until the file passes a lightweight media
+/// validation and has been atomically published at its final path.
+fn atomic_export_channel(
+    target: PathBuf,
+    ui_sender: async_channel::Sender<Result<(u64, u64), ()>>,
+) -> (PathBuf, async_channel::Sender<Result<(u64, u64), ()>>) {
+    static EXPORT_ID: AtomicU64 = AtomicU64::new(0);
+
+    let ext = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("media");
+    let dir = target.parent().unwrap_or_else(|| Path::new("."));
+    let staged = dir.join(format!(
+        ".clips-{}-{}-export.{ext}",
+        std::process::id(),
+        EXPORT_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    let (worker_sender, worker_receiver) = async_channel::unbounded();
+    let worker_path = staged.clone();
+
+    std::thread::spawn(move || {
+        let mut completion = None;
+        while let Ok(event) = worker_receiver.recv_blocking() {
+            match event {
+                Ok((done, total)) if done >= total => completion = Some((done, total)),
+                Ok(progress) => {
+                    if ui_sender.send_blocking(Ok(progress)).is_err() {
+                        let _ = std::fs::remove_file(&staged);
+                        return;
+                    }
+                }
+                Err(()) => {
+                    let _ = std::fs::remove_file(&staged);
+                    let _ = ui_sender.send_blocking(Err(()));
+                    return;
+                }
+            }
+        }
+
+        let published = completion
+            .filter(|(_, total)| *total > 0)
+            .and_then(|completion| {
+                validate_export(&staged)
+                    .and_then(|()| std::fs::rename(&staged, &target).map_err(|_| ()))
+                    .ok()
+                    .map(|()| completion)
+            });
+
+        match published {
+            Some(completion) => {
+                let _ = ui_sender.send_blocking(Ok(completion));
+            }
+            None => {
+                let _ = std::fs::remove_file(&staged);
+                let _ = ui_sender.send_blocking(Err(()));
+            }
+        }
+    });
+
+    (worker_path, worker_sender)
+}
+
+/// Check that the muxed output has a video stream, a plausible duration and
+/// decodable frames spread across the file. This intentionally avoids scanning
+/// every packet, so validation stays bounded even for multi-gigabyte exports.
+fn validate_export(path: &Path) -> Result<(), ()> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_type:format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|err| log::error!("could not validate export with ffprobe: {err}"))?;
+    if !output.status.success() {
+        log::error!("ffprobe rejected the staged export");
+        return Err(());
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    if !text.lines().any(|line| line.trim() == "video") {
+        log::error!("staged export has no video stream");
+        return Err(());
+    }
+    let duration_s = text
+        .lines()
+        .filter_map(|line| line.trim().parse::<f64>().ok())
+        .find(|value| value.is_finite() && *value > 0.0)
+        .ok_or_else(|| log::error!("staged export has no valid duration"))?;
+
+    let sample_times = [0.0, duration_s / 2.0, (duration_s - 0.25).max(0.0)];
+    for seconds in sample_times {
+        let status = Command::new("ffmpeg")
+            .args(["-v", "error", "-ss", &format!("{seconds:.6}")])
+            .arg("-i")
+            .arg(path)
+            .args(["-map", "0:v:0", "-an", "-frames:v", "1", "-f", "null", "-"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|err| log::error!("could not decode staged export: {err}"))?;
+        if !status.success() {
+            log::error!("staged export is not decodable near {seconds:.3} seconds");
+            return Err(());
+        }
+    }
+
+    Ok(())
+}
+
 /// How one ffmpeg invocation ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StageOutcome {
@@ -2605,6 +2778,76 @@ fn reverse_chunk_ms(scaled: Dimensions<u32>, fps: f64) -> u64 {
     let frames = (BUDGET_BYTES / frame_bytes).max(1);
     let ms = (frames as f64 / fps.max(1.0) * 1000.0) as u64;
     ms.clamp(1_000, 60_000)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, process::Command};
+
+    use super::{atomic_export_channel, validate_export, VideoPreview};
+
+    fn test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("clips-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn keyframe_alignment_accepts_only_the_small_timestamp_tolerance() {
+        assert!(VideoPreview::keyframe_is_aligned(10_000, 10_000));
+        assert!(VideoPreview::keyframe_is_aligned(10_004, 10_000));
+        assert!(!VideoPreview::keyframe_is_aligned(10_005, 10_000));
+        assert!(!VideoPreview::keyframe_is_aligned(9_995, 10_000));
+    }
+
+    #[test]
+    fn valid_video_is_published_only_after_validation() {
+        let target = test_path("atomic-output.mp4");
+        let (ui_sender, ui_receiver) = async_channel::unbounded();
+        let (staged, worker_sender) = atomic_export_channel(target.clone(), ui_sender);
+
+        let status = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=192x192:r=10:d=1",
+                "-c:v",
+                "libx264",
+            ])
+            .arg(&staged)
+            .status()
+            .expect("ffmpeg must be available for exports");
+        assert!(status.success());
+        assert!(!target.exists());
+
+        worker_sender.send_blocking(Ok((1, 2))).unwrap();
+        worker_sender.send_blocking(Ok((2, 2))).unwrap();
+        drop(worker_sender);
+
+        assert_eq!(ui_receiver.recv_blocking().unwrap(), Ok((1, 2)));
+        assert_eq!(ui_receiver.recv_blocking().unwrap(), Ok((2, 2)));
+        assert!(target.exists());
+        assert!(!staged.exists());
+        assert!(validate_export(&target).is_ok());
+        let _ = std::fs::remove_file(target);
+    }
+
+    #[test]
+    fn corrupt_video_is_never_published() {
+        let target = test_path("corrupt-output.mp4");
+        let (ui_sender, ui_receiver) = async_channel::unbounded();
+        let (staged, worker_sender) = atomic_export_channel(target.clone(), ui_sender);
+        std::fs::write(&staged, b"not a media file").unwrap();
+
+        worker_sender.send_blocking(Ok((1, 1))).unwrap();
+        drop(worker_sender);
+
+        assert_eq!(ui_receiver.recv_blocking().unwrap(), Err(()));
+        assert!(!target.exists());
+        assert!(!staged.exists());
+    }
 }
 
 /// Whether an ffmpeg hardware encoder is actually usable on this machine.

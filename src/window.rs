@@ -1290,7 +1290,7 @@ impl AppWindow {
         match reason {
             Ok(()) => {
                 imp.export_method_row
-                    .set_subtitle("Repackaging · stream copy; cuts on keyframes");
+                    .set_subtitle("Export method is verified when exporting");
                 imp.export_method_icon
                     .set_icon_name(Some("package-x-generic-symbolic"));
             }
