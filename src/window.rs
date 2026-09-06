@@ -14,7 +14,7 @@ use crate::{
     runtime,
     segments::{ClipRange, ClipSegment, SegmentExportMode},
     spawn,
-    widgets::preview::VideoPreview,
+    widgets::preview::{ffmpeg_encoder_status, HardwareEncoderStatus, VideoPreview},
     Listable,
 };
 
@@ -1290,7 +1290,7 @@ impl AppWindow {
         match reason {
             Ok(()) => {
                 imp.export_method_row
-                    .set_subtitle("Export method is verified when exporting");
+                    .set_subtitle("Export method checked during export");
                 imp.export_method_icon
                     .set_icon_name(Some("package-x-generic-symbolic"));
             }
@@ -1798,29 +1798,47 @@ impl AppWindow {
 
         let ffmpeg_path = self.multi_segments_supported();
         let (software_name, ffmpeg_hardware) = video_encoding.ffmpeg_encoders();
-        let (hardware_name, hardware_available) = if ffmpeg_path {
+        let (hardware_name, hardware_status) = if ffmpeg_path {
             (
                 ffmpeg_hardware,
                 ffmpeg_hardware
-                    .map(crate::widgets::preview::ffmpeg_has_encoder)
-                    .unwrap_or(false),
+                    .map(ffmpeg_encoder_status)
+                    .unwrap_or(HardwareEncoderStatus::NotInstalled),
             )
         } else {
             let resolved = video_encoding.resolve_encoder(true);
             (
                 resolved.hardware.then_some(resolved.element),
-                resolved.hardware,
+                if resolved.hardware {
+                    HardwareEncoderStatus::Available
+                } else {
+                    HardwareEncoderStatus::NotInstalled
+                },
             )
         };
+        let hardware_available = hardware_status == HardwareEncoderStatus::Available;
 
         imp.gpu_row.set_sensitive(hardware_available);
         imp.gpu_row
             .set_active(hardware_available && imp.gpu_preference.get());
         imp.gpu_row
-            .set_subtitle(&match (hardware_name, hardware_available) {
+            .set_subtitle(&match (hardware_name, hardware_status) {
                 (None, _) => gettext("Not supported by the selected video codec"),
-                (Some(_), false) => gettext("No compatible hardware encoder was found"),
-                (Some(_), true) => gettext("Use the available hardware encoder"),
+                (Some(_), HardwareEncoderStatus::Available) => {
+                    gettext("Use the available hardware encoder")
+                }
+                (Some(_), HardwareEncoderStatus::NotInstalled) => {
+                    gettext("Hardware encoder not installed")
+                }
+                (Some(_), HardwareEncoderStatus::UnsupportedHardware) => {
+                    gettext("GPU does not support this codec")
+                }
+                (Some(_), HardwareEncoderStatus::InvalidProbe) => {
+                    gettext("Hardware check used invalid parameters")
+                }
+                (Some(_), HardwareEncoderStatus::InitializationFailed) => {
+                    gettext("Hardware encoder failed to initialize")
+                }
             });
 
         let hardware_active = hardware_available && imp.gpu_row.is_active();

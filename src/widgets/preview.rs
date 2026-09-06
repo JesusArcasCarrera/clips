@@ -2054,7 +2054,7 @@ impl VideoPreview {
                 cmd.arg(&part_path);
 
                 let span = speed.output_duration_ms(range.duration_ms());
-                if run_ffmpeg_stage(
+                let outcome = run_ffmpeg_stage(
                     &mut cmd,
                     span,
                     done_ms,
@@ -2062,8 +2062,37 @@ impl VideoPreview {
                     total_ms,
                     &sender,
                     &running_flag,
-                ) != StageOutcome::Done
-                {
+                );
+                if outcome != StageOutcome::Done {
+                    let can_restart = export_mode == SegmentExportMode::Join || index == 0;
+                    if outcome == StageOutcome::Failed && encoder != software && can_restart {
+                        log::warn!(
+                            "hardware encoder {encoder} failed on section {}; retrying the export with {software}",
+                            index + 1
+                        );
+                        if export_mode == SegmentExportMode::Separate {
+                            let _ = std::fs::remove_file(&part_path);
+                        }
+                        drop(temps);
+                        Self::save_ffmpeg_segments(
+                            output_target,
+                            output_format,
+                            framerate,
+                            oriented,
+                            crop,
+                            scaled,
+                            orientation,
+                            mute,
+                            false,
+                            adjustments,
+                            speed,
+                            segments.clone(),
+                            export_mode,
+                            sender,
+                            running_flag,
+                        );
+                        return;
+                    }
                     let _ = sender.send_blocking(Err(()));
                     return;
                 }
@@ -2297,7 +2326,7 @@ impl VideoPreview {
             }
             cmd.arg(&forward_path);
 
-            if run_ffmpeg_stage(
+            let first_pass = run_ffmpeg_stage(
                 &mut cmd,
                 selection_ms,
                 0,
@@ -2305,8 +2334,34 @@ impl VideoPreview {
                 total_ms,
                 &sender,
                 &running_flag,
-            ) != StageOutcome::Done
-            {
+            );
+            if first_pass != StageOutcome::Done {
+                if first_pass == StageOutcome::Failed && encoder != sw {
+                    log::warn!(
+                        "hardware encoder {encoder} failed during export; retrying with {sw}"
+                    );
+                    drop(temps);
+                    Self::save_ffmpeg(
+                        input_path,
+                        output_path,
+                        output_format,
+                        framerate,
+                        oriented,
+                        crop,
+                        scaled,
+                        orientation,
+                        mute,
+                        inpoint_ns,
+                        duration_ns,
+                        false,
+                        adjustments,
+                        repeat,
+                        speed,
+                        sender,
+                        running_flag,
+                    );
+                    return;
+                }
                 let _ = sender.send_blocking(Err(()));
                 return;
             }
@@ -2784,7 +2839,10 @@ fn reverse_chunk_ms(scaled: Dimensions<u32>, fps: f64) -> u64 {
 mod tests {
     use std::{path::PathBuf, process::Command};
 
-    use super::{atomic_export_channel, validate_export, VideoPreview};
+    use super::{
+        atomic_export_channel, classify_ffmpeg_encoder_probe, validate_export,
+        HardwareEncoderStatus, VideoPreview,
+    };
 
     fn test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("clips-{}-{name}", std::process::id()))
@@ -2848,37 +2906,106 @@ mod tests {
         assert!(!target.exists());
         assert!(!staged.exists());
     }
+
+    #[test]
+    fn hardware_probe_reports_distinct_failure_causes() {
+        assert_eq!(
+            classify_ffmpeg_encoder_probe(false, false, ""),
+            HardwareEncoderStatus::NotInstalled
+        );
+        assert_eq!(
+            classify_ffmpeg_encoder_probe(true, true, ""),
+            HardwareEncoderStatus::Available
+        );
+        assert_eq!(
+            classify_ffmpeg_encoder_probe(true, false, "No capable devices found"),
+            HardwareEncoderStatus::UnsupportedHardware
+        );
+        assert_eq!(
+            classify_ffmpeg_encoder_probe(true, false, "Frame Dimension less than minimum"),
+            HardwareEncoderStatus::InvalidProbe
+        );
+        assert_eq!(
+            classify_ffmpeg_encoder_probe(true, false, "CUDA initialization failed"),
+            HardwareEncoderStatus::InitializationFailed
+        );
+    }
 }
 
 /// Whether an ffmpeg hardware encoder is actually usable on this machine.
 /// Merely appearing in `ffmpeg -encoders` is not enough: for example, FFmpeg may
 /// expose `av1_nvenc` on an RTX 30-series GPU even though that generation cannot
-/// initialize the encoder. Each known NVENC codec is probed once with a 64×64 frame.
+/// initialize the encoder. Each known NVENC codec is probed once with a 192×192
+/// frame, which is accepted by current H.264/HEVC NVENC implementations.
 pub(crate) fn ffmpeg_has_encoder(name: &str) -> bool {
-    static H264_NVENC: OnceLock<bool> = OnceLock::new();
-    static HEVC_NVENC: OnceLock<bool> = OnceLock::new();
-    static AV1_NVENC: OnceLock<bool> = OnceLock::new();
+    ffmpeg_encoder_status(name) == HardwareEncoderStatus::Available
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HardwareEncoderStatus {
+    Available,
+    NotInstalled,
+    UnsupportedHardware,
+    InvalidProbe,
+    InitializationFailed,
+}
+
+pub(crate) fn ffmpeg_encoder_status(name: &str) -> HardwareEncoderStatus {
+    static H264_NVENC: OnceLock<HardwareEncoderStatus> = OnceLock::new();
+    static HEVC_NVENC: OnceLock<HardwareEncoderStatus> = OnceLock::new();
+    static AV1_NVENC: OnceLock<HardwareEncoderStatus> = OnceLock::new();
 
     let cache = match name {
         "h264_nvenc" => &H264_NVENC,
         "hevc_nvenc" => &HEVC_NVENC,
         "av1_nvenc" => &AV1_NVENC,
-        _ => return false,
+        _ => return HardwareEncoderStatus::NotInstalled,
     };
     *cache.get_or_init(|| probe_ffmpeg_encoder(name))
 }
 
-fn probe_ffmpeg_encoder(name: &str) -> bool {
-    let available = Command::new("ffmpeg")
-        .args(["-hide_banner", "-encoders"])
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).contains(name))
-        .unwrap_or(false);
-    if !available {
-        return false;
+fn classify_ffmpeg_encoder_probe(
+    installed: bool,
+    success: bool,
+    stderr: &str,
+) -> HardwareEncoderStatus {
+    if !installed {
+        return HardwareEncoderStatus::NotInstalled;
+    }
+    if success {
+        return HardwareEncoderStatus::Available;
     }
 
-    Command::new("ffmpeg")
+    let diagnostic = stderr.to_ascii_lowercase();
+    if diagnostic.contains("frame dimension")
+        || diagnostic.contains("frame dimensions")
+        || diagnostic.contains("invalid width")
+        || diagnostic.contains("invalid height")
+    {
+        HardwareEncoderStatus::InvalidProbe
+    } else if diagnostic.contains("no capable devices")
+        || diagnostic.contains("unsupported device")
+        || diagnostic.contains("does not support")
+    {
+        HardwareEncoderStatus::UnsupportedHardware
+    } else {
+        HardwareEncoderStatus::InitializationFailed
+    }
+}
+
+fn probe_ffmpeg_encoder(name: &str) -> HardwareEncoderStatus {
+    let installed = Command::new("ffmpeg")
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains(name))
+        .unwrap_or(false);
+    if !installed {
+        return HardwareEncoderStatus::NotInstalled;
+    }
+
+    let output = Command::new("ffmpeg")
         .args([
             "-hide_banner",
             "-loglevel",
@@ -2886,9 +3013,9 @@ fn probe_ffmpeg_encoder(name: &str) -> bool {
             "-f",
             "lavfi",
             "-i",
-            "color=c=black:s=64x64:r=1",
+            "color=c=black:s=192x192:r=30",
             "-frames:v",
-            "1",
+            "2",
             "-an",
             "-c:v",
             name,
@@ -2898,10 +3025,20 @@ fn probe_ffmpeg_encoder(name: &str) -> bool {
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+        .stderr(Stdio::piped())
+        .output();
+    let Ok(output) = output else {
+        return HardwareEncoderStatus::InitializationFailed;
+    };
+    let status = classify_ffmpeg_encoder_probe(
+        true,
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stderr),
+    );
+    if status != HardwareEncoderStatus::Available {
+        log::warn!("hardware encoder {name} probe failed: {status:?}");
+    }
+    status
 }
 
 /// Rate-control args for constant-quality encoding (auto-scales file size with
