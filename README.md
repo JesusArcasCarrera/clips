@@ -46,6 +46,44 @@ This fork is based on [Footage](https://gitlab.com/adhami3310/Footage).
   Editing, Finish) through desktop portals. Spanish translation.
 
 
+## About
+
+Clips is a focused editor for short videos and screencasts. It can:
+
+- trim and export one or several sections;
+- crop, rotate, flip, and resize video;
+- adjust brightness, contrast, saturation, hue, gamma, and sharpness;
+- create slow-motion, repeated, and boomerang playback;
+- choose the container, video and audio codecs, frame rate, and output quality;
+- use a supported hardware encoder and fall back to software automatically.
+
+After rendering, the result can be opened, shown in its containing folder, or
+sent back to the editor with the current settings intact. See [Press](PRESS.md)
+for coverage of the upstream project.
+
+## What's different from Footage
+
+- **Multi-section editing**: trim and export one or several sections of the
+  same video, and **multi-source sequences** joining clips from several
+  files with **audio normalised** across sources.
+- **Colour and playback**: brightness, contrast, saturation, hue, gamma and
+  sharpness previewed live through GStreamer (WebM sharpness preview forced
+  through system-memory AYUV to avoid corrupted VP8/VP9 frames); slow
+  motion, repeat and boomerang playback with synchronised audio.
+- **FFmpeg renderer** replacing the fixed-bitrate GES export: container,
+  video and audio codecs, frame rate, quality targets computed from
+  resolution and frame rate, hardware encoders with software fallback,
+  **intelligent stream-copy export** when no re-encoding is needed, staged
+  progress, cancellation and temporary-file cleanup. Large-file export
+  stalls and hardware-encoder availability fixed.
+- **Subtitles**: embedded tracks probed asynchronously and a single-track
+  import model (in progress).
+- **UI**: responsive layout with `Adw.Breakpoint` and a sidebar toggle;
+  sidebar organised into Sections, Video and Export pages; a quality combo
+  with bitrate presets; post-export menu (Open, Show in Folder, Back to
+  Editing, Finish) through desktop portals. Spanish translation.
+
+
 ## Installation
 
 Clips is currently installed from source. Flathub and distribution packages
@@ -69,63 +107,42 @@ for coverage of the upstream project.
 
 <img src="data/resources/screenshots/0.png" alt="Main screen with a chosen ISO and one USB memory">
 
-## Contributing
-Issues and merge requests are more than welcome. However, please take the following into consideration:
+## Building and installing this fork
 
-- This project follows the [GNOME Code of Conduct](https://wiki.gnome.org/Foundation/CodeOfConduct)
-- Only Flatpak is supported
+Clips is written in Rust (GTK4/libadwaita, GStreamer, GES) and built with
+Meson. On Fedora:
 
-## Development
-
-### GNOME Builder
-The recommended method is to use GNOME Builder:
-
-1. Install [GNOME Builder](https://apps.gnome.org/app/org.gnome.Builder/) from Flathub
-1. Open Builder and select "Clone Repository..."
-1. Open this checkout in Builder.
-1. Press "Run Project" (▶) at the top, or `Ctrl`+`Shift`+`[Spacebar]`.
-
-### Flatpak
-You can install Clips from the latest commit:
-
-1. Install [`org.flatpak.Builder`](https://github.com/flathub/org.flatpak.Builder) from Flathub
-1. Open a terminal in the repository root.
-1. Run `flatpak run org.flatpak.Builder --install --user --force-clean build-dir flatpak/io.gitlab.adhami3310.Clips.json`.
-
-### Meson
-You can build and install on your host system by directly using the Meson buildsystem:
-
-1. Install `blueprint-compiler` and other relevant codecs.
-1. Run the following commands (with `/usr` prefix):
-```
-meson --prefix=/usr build
-ninja -C build
-sudo ninja -C build install
-```
-
-### Local user install
-
-This fork ships as **Clips** throughout: its binary is `clips`, its application
-ID is `io.gitlab.adhami3310.Clips`, and its data and gettext domains are
-`clips`.
-
-To build and install into `~/.local` so the launcher shows it as *Clips*:
-
-```
+```sh
+sudo dnf install meson cargo rust blueprint-compiler gtk4-devel libadwaita-devel \
+    gstreamer1-devel gstreamer1-plugins-base-devel gstreamer1-plugins-bad-free-devel \
+    gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-libav ges-devel ffmpeg
 meson setup _build --prefix="$HOME/.local"
 meson compile -C _build
 cargo test
 meson install -C _build
+clips
 ```
 
-The desktop file is installed at
-`~/.local/share/applications/io.gitlab.adhami3310.Clips.desktop` and the binary
-at `~/.local/bin/clips`.
+The binary is `clips`, the application id `io.gitlab.adhami3310.Clips` (the
+upstream prefix is kept so schemas and resources keep working), and the
+desktop file lands in `~/.local/share/applications/`. A Flatpak manifest for
+local builds is in `flatpak/io.gitlab.adhami3310.Clips.json`; nothing is
+published on Flathub, and the Flathub package named *Footage* is the upstream
+application, not this fork.
 
-## Credits
+## Credits and license
 
-Actively developed by Khaleel Al-Adhami.
+This is a downstream fork of **[Footage](https://gitlab.com/adhami3310/Footage)**. All the
+credit for the application itself goes to its authors and contributors
+(Khaleel Al-Adhami; logo by kramo; translators of Footage); this repository only adds the changes listed above. The upstream
+project is the place to get the official application; nothing here is
+published on Flathub or in any distribution.
 
-Logo desgined by kramo.
+The code inherits the upstream license, **GPL-3.0-or-later** (see `COPYING`). Original
+copyright headers are preserved in every file; the fork's changes are in the
+git history of this repository.
 
-Huge thanks to all of the translators who brought Footage to many other languages!
+## Reporting issues
+
+Report problems with this fork **here**, not upstream. If you can reproduce
+the problem on the official build, report it there instead.
