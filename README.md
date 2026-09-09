@@ -11,9 +11,17 @@ This fork is based on [Footage](https://gitlab.com/adhami3310/Footage).
 
 > Personal fork of Footage, renamed **Clips** (binary `clips`, gettext domain
 > `clips`; the app id `io.gitlab.adhami3310.Clips` keeps the upstream prefix).
-> Not affiliated with the Footage author. No warranty, no support; most of the
-> fork's code was written by Claude under my direction. Commits are atomic per
+> Not affiliated with the Footage author. No warranty, no support. Commits are atomic per
 > feature so anything can be cherry-picked.
+
+> **All modifications in this fork were made by an LLM** (Claude, through
+> Claude Code) under my direction, on top of the upstream code.
+>
+> <sub>For that very reason I am not submitting them upstream: right now I
+> don't have the time to review every change and send it the way it should be
+> sent, and I don't want to add noise to the projects or their communities. I
+> am only after tools that fit my own workflow better, and I leave them public
+> here in case any of these changes inspires or helps someone else.</sub>
 
 ## What's different from Footage
 
