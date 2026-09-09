@@ -9,6 +9,34 @@ This fork is based on [Footage](https://gitlab.com/adhami3310/Footage).
 
 </div>
 
+> Personal fork of Footage, renamed **Clips** (binary `clips`, gettext domain
+> `clips`; the app id `io.gitlab.adhami3310.Clips` keeps the upstream prefix).
+> Not affiliated with the Footage author. No warranty, no support; most of the
+> fork's code was written by Claude under my direction. Commits are atomic per
+> feature so anything can be cherry-picked.
+
+## What's different from Footage
+
+- **Multi-section editing**: trim and export one or several sections of the
+  same video, and **multi-source sequences** joining clips from several
+  files with **audio normalised** across sources.
+- **Colour and playback**: brightness, contrast, saturation, hue, gamma and
+  sharpness previewed live through GStreamer (WebM sharpness preview forced
+  through system-memory AYUV to avoid corrupted VP8/VP9 frames); slow
+  motion, repeat and boomerang playback with synchronised audio.
+- **FFmpeg renderer** replacing the fixed-bitrate GES export: container,
+  video and audio codecs, frame rate, quality targets computed from
+  resolution and frame rate, hardware encoders with software fallback,
+  **intelligent stream-copy export** when no re-encoding is needed, staged
+  progress, cancellation and temporary-file cleanup. Large-file export
+  stalls and hardware-encoder availability fixed.
+- **Subtitles**: embedded tracks probed asynchronously and a single-track
+  import model (in progress).
+- **UI**: responsive layout with `Adw.Breakpoint` and a sidebar toggle;
+  sidebar organised into Sections, Video and Export pages; a quality combo
+  with bitrate presets; post-export menu (Open, Show in Folder, Back to
+  Editing, Finish) through desktop portals. Spanish translation.
+
 
 ## Installation
 
