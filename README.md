@@ -14,8 +14,8 @@ This fork is based on [Footage](https://gitlab.com/adhami3310/Footage).
 > Not affiliated with the Footage author. No warranty, no support. Commits are atomic per
 > feature so anything can be cherry-picked.
 
-> **All modifications in this fork were made by an LLM** (Claude, through
-> Claude Code) under my direction, on top of the upstream code.
+> **All modifications in this fork were made by LLM agents** (several
+> models and coding agents) under my direction, on top of the upstream code.
 >
 > <sub>For that very reason I am not submitting them upstream: right now I
 > don't have the time to review every change and send it the way it should be
